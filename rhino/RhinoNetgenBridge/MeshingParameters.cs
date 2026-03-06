@@ -2,59 +2,150 @@ namespace RhinoNetgenBridge
 {
     /// <summary>
     /// Parameters that control tetrahedral mesh generation via netgen.
+    ///
+    /// <para>Start from one of the factory presets (<see cref="Coarse"/>,
+    /// <see cref="Medium"/>, <see cref="Fine"/>, <see cref="VeryFine"/>)
+    /// and override individual properties as needed.</para>
     /// </summary>
     public sealed class MeshingParameters
     {
-        // ---------------------------------------------------------------
-        // Defaults match netgen's Ng_Meshing_Parameters defaults
-        // ---------------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // Element size
+        // -----------------------------------------------------------------------
 
         /// <summary>
         /// Maximum allowed global mesh element size.
-        /// Default is effectively unconstrained (1 × 10⁶).
+        /// Netgen will not create any element larger than this value.
+        /// Default: 1 × 10⁶ (effectively unconstrained).
         /// </summary>
         public double MaxElementSize { get; set; } = 1e6;
 
         /// <summary>
+        /// Minimum allowed global mesh element size.
+        /// Netgen will not create any element smaller than this value.
+        /// Default: 0 (no lower limit).
+        /// </summary>
+        public double MinElementSize { get; set; } = 0.0;
+
+        // -----------------------------------------------------------------------
+        // Density / grading
+        // -----------------------------------------------------------------------
+
+        /// <summary>
         /// Mesh density in the range [0, 1].
         /// 0 = coarse, 1 = fine.
-        /// Default is 0.5 (medium).
+        /// Default: 0.5 (medium).
         /// </summary>
         public double Fineness { get; set; } = 0.5;
 
         /// <summary>
         /// Grading factor in the range [0, 1].
-        /// 0 = uniform mesh, 1 = aggressive local grading.
-        /// Default is 0.3.
+        /// 0 = uniform mesh (elements of similar size everywhere).
+        /// 1 = aggressive local grading (small elements near features, large elsewhere).
+        /// Default: 0.3.
         /// </summary>
         public double Grading { get; set; } = 0.3;
 
-        // ---------------------------------------------------------------
-        // Convenience factory methods
-        // ---------------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // Curvature / edge resolution
+        // -----------------------------------------------------------------------
 
-        /// <summary>Return a coarse meshing preset (fineness = 0.2).</summary>
+        /// <summary>
+        /// Target number of mesh elements per geometry edge.
+        /// Higher values produce a finer mesh along straight edges.
+        /// Default: 2.0.
+        /// </summary>
+        public double ElementsPerEdge { get; set; } = 2.0;
+
+        /// <summary>
+        /// Target number of mesh elements per curvature radius.
+        /// Higher values produce a finer mesh on curved surfaces.
+        /// Default: 2.0.
+        /// </summary>
+        public double ElementsPerCurve { get; set; } = 2.0;
+
+        // -----------------------------------------------------------------------
+        // Close-edge refinement
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Enable automatic mesh refinement at geometrically close edges.
+        /// When <c>true</c>, netgen detects narrow gaps and generates finer
+        /// elements to resolve them correctly.
+        /// Default: <c>false</c>.
+        /// </summary>
+        public bool CloseEdgeRefinement { get; set; } = false;
+
+        /// <summary>
+        /// Refinement factor used when <see cref="CloseEdgeRefinement"/> is
+        /// enabled.  Larger values produce finer elements near close edges.
+        /// Default: 2.0.
+        /// </summary>
+        public double CloseEdgeFactor { get; set; } = 2.0;
+
+        // -----------------------------------------------------------------------
+        // Minimum edge length
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Enforce a minimum edge length during edge subdivision.
+        /// When <c>true</c>, netgen will not subdivide edges shorter than
+        /// <see cref="MinEdgeLength"/>.
+        /// Default: <c>false</c>.
+        /// </summary>
+        public bool EnforceMinEdgeLength { get; set; } = false;
+
+        /// <summary>
+        /// Minimum edge length used when <see cref="EnforceMinEdgeLength"/>
+        /// is <c>true</c>.
+        /// Default: 1 × 10⁻⁴.
+        /// </summary>
+        public double MinEdgeLength { get; set; } = 1e-4;
+
+        // -----------------------------------------------------------------------
+        // Optimization
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Number of 2-D (surface) mesh optimisation iterations.
+        /// More steps improve surface mesh quality at the cost of time.
+        /// Default: 3.
+        /// </summary>
+        public int OptimizationSteps2D { get; set; } = 3;
+
+        /// <summary>
+        /// Number of 3-D (volume) mesh optimisation iterations.
+        /// More steps improve tet quality at the cost of time.
+        /// Default: 3.
+        /// </summary>
+        public int OptimizationSteps3D { get; set; } = 3;
+
+        // -----------------------------------------------------------------------
+        // Factory presets
+        // -----------------------------------------------------------------------
+
+        /// <summary>Coarse preset – fast, low element count (fineness = 0.2).</summary>
         public static MeshingParameters Coarse() => new MeshingParameters
         {
-            Fineness  = 0.2,
-            Grading   = 0.3,
+            Fineness = 0.2,
+            Grading  = 0.3,
         };
 
-        /// <summary>Return a medium meshing preset (fineness = 0.5).</summary>
+        /// <summary>Medium preset – balanced quality and speed (fineness = 0.5).</summary>
         public static MeshingParameters Medium() => new MeshingParameters();
 
-        /// <summary>Return a fine meshing preset (fineness = 0.8).</summary>
+        /// <summary>Fine preset – high element count (fineness = 0.8).</summary>
         public static MeshingParameters Fine() => new MeshingParameters
         {
-            Fineness  = 0.8,
-            Grading   = 0.3,
+            Fineness = 0.8,
+            Grading  = 0.3,
         };
 
-        /// <summary>Return a very-fine meshing preset (fineness = 1.0).</summary>
+        /// <summary>Very-fine preset – maximum quality (fineness = 1.0).</summary>
         public static MeshingParameters VeryFine() => new MeshingParameters
         {
-            Fineness  = 1.0,
-            Grading   = 0.1,
+            Fineness = 1.0,
+            Grading  = 0.1,
         };
     }
 }

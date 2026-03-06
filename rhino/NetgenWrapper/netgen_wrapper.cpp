@@ -2,16 +2,6 @@
  * \file netgen_wrapper.cpp
  * \brief Implementation of the flat C wrapper for netgen's STL-based
  *        tetrahedral mesh generation.
- *
- * Strategy
- * --------
- * 1. Accept the caller's triangulated surface (vertices + triangle indices).
- * 2. Build an Ng_STL_Geometry by adding each triangle.
- * 3. Run the standard netgen STL pipeline:
- *      Ng_STL_InitSTLGeometry → Ng_STL_MakeEdges →
- *      Ng_STL_GenerateSurfaceMesh → Ng_GenerateVolumeMesh
- * 4. Extract all points and tet elements into a heap-allocated result
- *    struct that the caller can query and then free.
  */
 
 #include "netgen_wrapper.h"
@@ -52,33 +42,50 @@ static void computeNormal(const double* p1, const double* p2, const double* p3,
     nv[2] = ax * by - ay * bx;
 }
 
-// ---------------------------------------------------------------------------
-// Public C API implementation
-// ---------------------------------------------------------------------------
-
-extern "C" {
-
-NGWRAPPER_API void NGW_Init(void)
+/// Transfer fields from NGW_MeshingParams into an Ng_Meshing_Parameters.
+static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst)
 {
-    Ng_Init();
+    dst.maxh               = src->maxh;
+    dst.minh               = src->minh;
+    dst.fineness           = src->fineness;
+    dst.grading            = src->grading;
+    dst.elementsperedge    = src->elementsperedge;
+    dst.elementspercurve   = src->elementspercurve;
+    dst.closeedgeenable    = src->closeedgeenable;
+    dst.closeedgefact      = src->closeedgefact;
+    dst.minedgelenenable   = src->minedgelenenable;
+    dst.minedgelen         = src->minedgelen;
+    dst.optsteps_2d        = src->optsteps_2d;
+    dst.optsteps_3d        = src->optsteps_3d;
+    dst.second_order       = 0;
+    dst.quad_dominated     = 0;
+    dst.meshsize_filename  = nullptr;
+    dst.uselocalh          = 1;
+    dst.optsurfmeshenable  = 1;
+    dst.optvolmeshenable   = 1;
+    dst.invert_tets        = 0;
+    dst.invert_trigs       = 0;
+    dst.check_overlap              = 1;
+    dst.check_overlapping_boundary = 1;
 }
 
-NGWRAPPER_API void NGW_Exit(void)
-{
-    Ng_Exit();
-}
+// ---------------------------------------------------------------------------
+// Core mesh-generation logic (shared by both public entry points)
+// ---------------------------------------------------------------------------
 
-NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
+static void* generateMeshImpl(
     int     numVertices,
     double* vertices,
     int     numTriangles,
     int*    triangles,
-    double  maxh,
-    double  fineness,
-    double  grading)
+    const NGW_MeshingParams*        mp,
+    int                             numPointRestrictions,
+    const NGW_PointSizeRestriction* pointRestrictions,
+    int                             numBoxRestrictions,
+    const NGW_BoxSizeRestriction*   boxRestrictions)
 {
     if (numVertices <= 0 || numTriangles <= 0
-        || vertices == nullptr || triangles == nullptr)
+        || vertices == nullptr || triangles == nullptr || mp == nullptr)
         return nullptr;
 
     // ------------------------------------------------------------------
@@ -94,7 +101,6 @@ NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
         int i1 = triangles[i * 3 + 1];
         int i2 = triangles[i * 3 + 2];
 
-        // Guard against out-of-range indices
         if (i0 < 0 || i0 >= numVertices ||
             i1 < 0 || i1 >= numVertices ||
             i2 < 0 || i2 >= numVertices)
@@ -106,66 +112,81 @@ NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
 
         double nv[3];
         computeNormal(p1, p2, p3, nv);
-
         Ng_STL_AddTriangle(stlGeom, p1, p2, p3, nv);
     }
 
-    // ------------------------------------------------------------------
-    // 2. Initialise STL geometry
-    // ------------------------------------------------------------------
     Ng_Result res = Ng_STL_InitSTLGeometry(stlGeom);
     if (res != NG_OK)
         return nullptr;
 
     // ------------------------------------------------------------------
-    // 3. Set up meshing parameters
+    // 2. Set up meshing parameters
     // ------------------------------------------------------------------
-    Ng_Meshing_Parameters mp;
-    mp.uselocalh          = 1;
-    mp.maxh               = maxh;
-    mp.minh               = 0.0;
-    mp.fineness           = fineness;
-    mp.grading            = grading;
-    mp.elementsperedge    = 2.0;
-    mp.elementspercurve   = 2.0;
-    mp.closeedgeenable    = 0;
-    mp.closeedgefact      = 2.0;
-    mp.minedgelenenable   = 0;
-    mp.minedgelen         = 1e-4;
-    mp.second_order       = 0;
-    mp.quad_dominated     = 0;
-    mp.meshsize_filename  = nullptr;
-    mp.optsurfmeshenable  = 1;
-    mp.optvolmeshenable   = 1;
-    mp.optsteps_2d        = 3;
-    mp.optsteps_3d        = 3;
-    mp.invert_tets        = 0;
-    mp.invert_trigs       = 0;
-    mp.check_overlap              = 1;
-    mp.check_overlapping_boundary = 1;
+    Ng_Meshing_Parameters ngmp;
+    applyParams(mp, ngmp);
 
     // ------------------------------------------------------------------
-    // 4. Run meshing pipeline
+    // 3. Create mesh and apply optional local size restrictions
     // ------------------------------------------------------------------
     Ng_Mesh* mesh = Ng_NewMesh();
     if (!mesh)
         return nullptr;
 
-    res = Ng_STL_MakeEdges(stlGeom, mesh, &mp);
+    // Global size restriction derived from maxh (belt-and-suspenders)
+    if (mp->maxh < 1e5)
+        Ng_RestrictMeshSizeGlobal(mesh, mp->maxh);
+
+    // Point-based restrictions
+    if (numPointRestrictions > 0 && pointRestrictions != nullptr)
+    {
+        for (int i = 0; i < numPointRestrictions; ++i)
+        {
+            double p[3] = {
+                pointRestrictions[i].x,
+                pointRestrictions[i].y,
+                pointRestrictions[i].z
+            };
+            Ng_RestrictMeshSizePoint(mesh, p, pointRestrictions[i].h);
+        }
+    }
+
+    // Box-based restrictions
+    if (numBoxRestrictions > 0 && boxRestrictions != nullptr)
+    {
+        for (int i = 0; i < numBoxRestrictions; ++i)
+        {
+            double pmin[3] = {
+                boxRestrictions[i].xmin,
+                boxRestrictions[i].ymin,
+                boxRestrictions[i].zmin
+            };
+            double pmax[3] = {
+                boxRestrictions[i].xmax,
+                boxRestrictions[i].ymax,
+                boxRestrictions[i].zmax
+            };
+            Ng_RestrictMeshSizeBox(mesh, pmin, pmax, boxRestrictions[i].h);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. Run meshing pipeline
+    // ------------------------------------------------------------------
+    res = Ng_STL_MakeEdges(stlGeom, mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
         return nullptr;
     }
 
-    res = Ng_STL_GenerateSurfaceMesh(stlGeom, mesh, &mp);
+    res = Ng_STL_GenerateSurfaceMesh(stlGeom, mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
         return nullptr;
     }
 
-    res = Ng_GenerateVolumeMesh(mesh, &mp);
+    res = Ng_GenerateVolumeMesh(mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
@@ -201,8 +222,68 @@ NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
     }
 
     Ng_DeleteMesh(mesh);
-
     return static_cast<void*>(result);
+}
+
+// ---------------------------------------------------------------------------
+// Public C API implementation
+// ---------------------------------------------------------------------------
+
+extern "C" {
+
+NGWRAPPER_API void NGW_Init(void)
+{
+    Ng_Init();
+}
+
+NGWRAPPER_API void NGW_Exit(void)
+{
+    Ng_Exit();
+}
+
+NGWRAPPER_API void NGW_DefaultMeshingParams(NGW_MeshingParams* mp)
+{
+    if (!mp) return;
+    mp->maxh             = 1e6;
+    mp->minh             = 0.0;
+    mp->fineness         = 0.5;
+    mp->grading          = 0.3;
+    mp->elementsperedge  = 2.0;
+    mp->elementspercurve = 2.0;
+    mp->closeedgefact    = 2.0;
+    mp->minedgelen       = 1e-4;
+    mp->closeedgeenable  = 0;
+    mp->minedgelenenable = 0;
+    mp->optsteps_2d      = 3;
+    mp->optsteps_3d      = 3;
+}
+
+NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
+    int                      numVertices,
+    double*                  vertices,
+    int                      numTriangles,
+    int*                     triangles,
+    const NGW_MeshingParams* mp)
+{
+    return generateMeshImpl(numVertices, vertices, numTriangles, triangles,
+                            mp, 0, nullptr, 0, nullptr);
+}
+
+NGWRAPPER_API void* NGW_GenerateTetrahedralMeshEx(
+    int                            numVertices,
+    double*                        vertices,
+    int                            numTriangles,
+    int*                           triangles,
+    const NGW_MeshingParams*       mp,
+    int                            numPointRestrictions,
+    const NGW_PointSizeRestriction* pointRestrictions,
+    int                            numBoxRestrictions,
+    const NGW_BoxSizeRestriction*  boxRestrictions)
+{
+    return generateMeshImpl(numVertices, vertices, numTriangles, triangles,
+                            mp,
+                            numPointRestrictions, pointRestrictions,
+                            numBoxRestrictions,   boxRestrictions);
 }
 
 NGWRAPPER_API int NGW_GetNumPoints(void* result)
