@@ -11,8 +11,9 @@ netgen メッシュカーネルを使って Rhino の **Brep から四面体メ�
 3. [メッシュサイズの制御](#3-メッシュサイズの制御)
 4. [ローカルサイズ制約](#4-ローカルサイズ制約)
 5. [スムージング](#5-スムージング)
-6. [結果の取得・利用](#6-結果の取得利用)
-7. [パラメータ一覧](#7-パラメータ一覧)
+6. [要素品質の評価](#6-要素品質の評価)
+7. [結果の取得・利用](#7-結果の取得利用)
+8. [パラメータ一覧](#8-パラメータ一覧)
 
 ---
 
@@ -304,7 +305,98 @@ TetrahedralMesh smoothed2 = tet.CreateSmoothed(iterations: 3, factor: 1.0);
 
 ---
 
-## 6. 結果の取得・利用
+## 6. 要素品質の評価
+
+生成したメッシュの品質を確認することで、FEM 解析前に問題のある要素を把握できます。
+
+### 指標の説明
+
+| 指標 | 理想値（正四面体） | 意味 |
+|---|---|---|
+| **MeanRatio η** | 1.0 | 総合品質指標。0 に近いほど縮退している |
+| **MinDihedralAngle** | ≈ 70.5° | 最小二面角。極端に小さいと FEM 解析の精度が低下 |
+| **MaxDihedralAngle** | ≈ 70.5° | 最大二面角。極端に大きいと扁平な要素 |
+| **Volume** | > 0 | 負は反転要素 |
+| **EdgeLengthRatio** | 1.0 | 最短エッジ / 最長エッジ。ニードル要素の検出 |
+
+### メッシュ全体の統計を取得する
+
+```csharp
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+
+// 統計だけ取得する
+MeshQualityStatistics stats = tet.ComputeQualityStatistics();
+RhinoApp.WriteLine(stats.ToString());
+// 例出力:
+// Elements: 12456  Inverted: 0
+// MeanRatio η  min=0.412  avg=0.831  max=0.999  σ=0.091
+// DihedralAngle  min=18.3°  avg(min)=52.1°  max=148.7°
+// Volume  min=1.23E-04  max=8.76E+00  total=1.23E+04
+
+// 統計と同時に全要素の品質配列も取得する
+MeshQualityStatistics stats2 = tet.ComputeQualityStatistics(out TetQuality[] allQ);
+
+// 品質閾値以下の要素数を調べる
+int badCount = stats2.ElementsBelowQualityThreshold(threshold: 0.2, allQ);
+RhinoApp.WriteLine($"η < 0.2 の要素: {badCount}");
+```
+
+### 特定要素の品質を調べる
+
+```csharp
+// 最も品質が悪い要素を詳しく調べる
+MeshQualityStatistics stats = tet.ComputeQualityStatistics(out var allQ);
+int worstIdx = stats.WorstElementIndex;
+
+TetQuality worst = tet.ComputeElementQuality(worstIdx);
+RhinoApp.WriteLine($"最悪要素 #{worstIdx}: {worst}");
+// → η=0.412  DihedralMin=18.3°  DihedralMax=148.7°  Vol=1.23E-04  EdgeRatio=0.082
+
+// 最良要素
+TetQuality best = tet.ComputeElementQuality(stats.BestElementIndex);
+RhinoApp.WriteLine($"最良要素: {best}");
+```
+
+### 全要素をスキャンして問題要素を特定する
+
+```csharp
+TetQuality[] allQualities = tet.ComputeAllElementQualities();
+
+for (int i = 0; i < allQualities.Length; i++)
+{
+    var q = allQualities[i];
+
+    // 反転要素
+    if (q.IsInverted)
+        RhinoApp.WriteLine($"反転要素: #{i}  Vol={q.Volume:G4}");
+
+    // スリバー（ニードル）要素
+    if (q.MinDihedralAngleDegrees < 10.0)
+        RhinoApp.WriteLine($"スリバー要素: #{i}  MinDihedral={q.MinDihedralAngleDegrees:F1}°");
+
+    // 扁平要素
+    if (q.MaxDihedralAngleDegrees > 160.0)
+        RhinoApp.WriteLine($"扁平要素: #{i}  MaxDihedral={q.MaxDihedralAngleDegrees:F1}°");
+}
+```
+
+### スムージングで品質を改善する
+
+品質評価 → スムージング → 再評価 のサイクルで品質改善を確認できます。
+
+```csharp
+MeshQualityStatistics before = tet.ComputeQualityStatistics();
+RhinoApp.WriteLine($"スムージング前 η_avg={before.AverageMeanRatio:F3}");
+
+TetrahedralMesh smoothed = tet.CreateSmoothed(iterations: 5, factor: 0.5);
+
+MeshQualityStatistics after = smoothed.ComputeQualityStatistics();
+RhinoApp.WriteLine($"スムージング後 η_avg={after.AverageMeanRatio:F3}");
+```
+
+---
+
+## 7. 結果の取得・利用
 
 ### 要素数・頂点数の確認
 
@@ -352,7 +444,7 @@ doc.Views.Redraw();
 
 ---
 
-## 7. パラメータ一覧
+## 8. パラメータ一覧
 
 ### MeshingParameters
 
@@ -396,3 +488,31 @@ doc.Views.Redraw();
 | `GetTetrahedron(index)` | 指定四面体の頂点インデックスを取得 |
 | `ToRhinoSurfaceMesh()` | 外表面を Rhino `Mesh` に変換 |
 | `CreateSmoothed(iterations, factor)` | ラプラシアンスムージングを適用した新しいメッシュを返す |
+| `ComputeElementQuality(index)` | 指定要素の `TetQuality` を返す |
+| `ComputeAllElementQualities()` | 全要素の `TetQuality[]` を返す |
+| `ComputeQualityStatistics()` | メッシュ全体の `MeshQualityStatistics` を返す |
+| `ComputeQualityStatistics(out TetQuality[])` | 統計と全要素品質を同時に返す |
+
+### TetQuality のプロパティ
+
+| プロパティ | 理想値 | 説明 |
+|---|---|---|
+| `MeanRatio` | 1.0 | 正規化品質 η ∈ (0,1] |
+| `MinDihedralAngleDegrees` | ≈ 70.5° | 最小二面角 |
+| `MaxDihedralAngleDegrees` | ≈ 70.5° | 最大二面角 |
+| `Volume` | > 0 | 符号付き体積（負 = 反転要素） |
+| `EdgeLengthRatio` | 1.0 | 最短/最長エッジ比 |
+| `IsInverted` | false | 反転要素かどうか |
+
+### MeshQualityStatistics のプロパティ
+
+| プロパティ | 説明 |
+|---|---|
+| `MinMeanRatio` / `MaxMeanRatio` / `AverageMeanRatio` | η の最小・最大・平均 |
+| `StdDevMeanRatio` | η の標準偏差 |
+| `WorstElementIndex` / `BestElementIndex` | 最悪・最良要素のインデックス |
+| `MinDihedralAngleDegrees` / `MaxDihedralAngleDegrees` | 全要素にわたる二面角の最小・最大 |
+| `AverageMinDihedralAngleDegrees` | 各要素の最小二面角の平均 |
+| `MinVolume` / `MaxVolume` / `TotalVolume` | 体積の最小・最大・合計 |
+| `TotalElements` | 全要素数 |
+| `InvertedElements` | 反転要素数 |

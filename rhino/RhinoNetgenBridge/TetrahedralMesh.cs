@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Rhino.Geometry;
-
 namespace RhinoNetgenBridge
 {
     /// <summary>
@@ -61,6 +60,123 @@ namespace RhinoNetgenBridge
             int i = index * 4;
             return (Tetrahedra[i], Tetrahedra[i + 1], Tetrahedra[i + 2], Tetrahedra[i + 3]);
         }
+
+        // ---------------------------------------------------------------
+        // Element quality evaluation
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Compute quality metrics for a single tetrahedral element.
+        /// </summary>
+        /// <param name="index">0-based element index.</param>
+        /// <returns>
+        ///   A <see cref="TetQuality"/> record with mean-ratio, dihedral angles,
+        ///   volume, and edge-length ratio.
+        /// </returns>
+        public TetQuality ComputeElementQuality(int index)
+        {
+            if (index < 0 || index >= TetCount)
+                throw new ArgumentOutOfRangeException(nameof(index));
+
+            int bi = index * 4;
+            return QualityComputer.Compute(
+                Vertices,
+                Tetrahedra[bi],
+                Tetrahedra[bi + 1],
+                Tetrahedra[bi + 2],
+                Tetrahedra[bi + 3]);
+        }
+
+        /// <summary>
+        /// Compute quality metrics for every element in the mesh.
+        /// </summary>
+        /// <returns>
+        ///   Array of <see cref="TetQuality"/> with one entry per element,
+        ///   indexed consistently with <see cref="Tetrahedra"/>.
+        /// </returns>
+        public TetQuality[] ComputeAllElementQualities()
+        {
+            var result = new TetQuality[TetCount];
+            for (int i = 0; i < TetCount; ++i)
+            {
+                int bi = i * 4;
+                result[i] = QualityComputer.Compute(
+                    Vertices,
+                    Tetrahedra[bi],
+                    Tetrahedra[bi + 1],
+                    Tetrahedra[bi + 2],
+                    Tetrahedra[bi + 3]);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Compute aggregate quality statistics for the entire mesh.
+        ///
+        /// <para>Also returns the per-element quality array as an out parameter
+        /// so that the caller can inspect individual elements without a second
+        /// pass through the mesh.</para>
+        /// </summary>
+        /// <param name="perElementQualities">
+        ///   Receives the per-element quality array (same length as
+        ///   <see cref="TetCount"/>).
+        /// </param>
+        public MeshQualityStatistics ComputeQualityStatistics(
+            out TetQuality[] perElementQualities)
+        {
+            perElementQualities = ComputeAllElementQualities();
+            int n = perElementQualities.Length;
+
+            if (n == 0)
+                return new MeshQualityStatistics(
+                    0,0,0,0, -1,-1, 0,0,0, 0,0,0, 0,0);
+
+            double minEta = double.MaxValue, maxEta = double.MinValue, sumEta = 0;
+            double minDih = double.MaxValue, maxDih = double.MinValue, sumMinDih = 0;
+            double minVol = double.MaxValue, maxVol = double.MinValue, sumVol = 0;
+            int worstIdx = 0, bestIdx = 0, invertedCount = 0;
+
+            for (int i = 0; i < n; ++i)
+            {
+                var q = perElementQualities[i];
+
+                if (q.MeanRatio < minEta) { minEta = q.MeanRatio; worstIdx = i; }
+                if (q.MeanRatio > maxEta) { maxEta = q.MeanRatio; bestIdx  = i; }
+                sumEta += q.MeanRatio;
+
+                if (q.MinDihedralAngleDegrees < minDih) minDih = q.MinDihedralAngleDegrees;
+                if (q.MaxDihedralAngleDegrees > maxDih) maxDih = q.MaxDihedralAngleDegrees;
+                sumMinDih += q.MinDihedralAngleDegrees;
+
+                double absVol = Math.Abs(q.Volume);
+                if (absVol < minVol) minVol = absVol;
+                if (absVol > maxVol) maxVol = absVol;
+                sumVol += q.Volume;
+
+                if (q.IsInverted) ++invertedCount;
+            }
+
+            double avgEta = sumEta / n;
+
+            // Standard deviation of mean ratio
+            double sumSq = 0;
+            foreach (var q in perElementQualities)
+                sumSq += (q.MeanRatio - avgEta) * (q.MeanRatio - avgEta);
+            double stdEta = Math.Sqrt(sumSq / n);
+
+            return new MeshQualityStatistics(
+                minEta, maxEta, avgEta, stdEta,
+                worstIdx, bestIdx,
+                minDih, maxDih, sumMinDih / n,
+                minVol, maxVol, sumVol,
+                n, invertedCount);
+        }
+
+        /// <summary>
+        /// Convenience overload that discards the per-element array.
+        /// </summary>
+        public MeshQualityStatistics ComputeQualityStatistics()
+            => ComputeQualityStatistics(out _);
 
         // ---------------------------------------------------------------
         // Laplacian smoothing

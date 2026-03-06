@@ -43,6 +43,7 @@
     <Compile Include="NetgenNative.cs" />
     <Compile Include="MeshingParameters.cs" />
     <Compile Include="SizeRestrictions.cs" />
+    <Compile Include="MeshQuality.cs" />
     <Compile Include="TetrahedralMesh.cs" />
     <Compile Include="NetgenMesher.cs" />
   </ItemGroup>
