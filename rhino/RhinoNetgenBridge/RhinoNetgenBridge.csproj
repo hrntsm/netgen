@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Target .NET Framework 4.8 to match Rhino 7/8 on Windows, and
+         net7.0 for Rhino 8 on macOS / cross-platform development.
+         Adjust the TargetFramework(s) to match your Rhino version. -->
+    <TargetFramework>net48</TargetFramework>
+    <!-- Uncomment the line below to multi-target (.NET 4.8 + .NET 7):
+    <TargetFrameworks>net48;net7.0</TargetFrameworks>
+    -->
+
+    <RootNamespace>RhinoNetgenBridge</RootNamespace>
+    <AssemblyName>RhinoNetgenBridge</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>netgen Contributors</Authors>
+    <Description>
+      P/Invoke-based C# bridge that enables tetrahedral mesh generation from
+      Rhino Brep objects via the netgen meshing kernel.
+    </Description>
+
+    <!-- Allow nullable reference types (C# 8+). Remove if targeting older SDK. -->
+    <Nullable>enable</Nullable>
+    <LangVersion>9.0</LangVersion>
+
+    <!-- Embed PDB for easier debugging -->
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <!-- -----------------------------------------------------------------------
+       RhinoCommon reference
+       Prefer the NuGet package during development so the project builds
+       without a full Rhino installation.  In a real Rhino plug-in project
+       this reference is typically provided by the Rhino plug-in SDK templates.
+       ----------------------------------------------------------------------- -->
+  <ItemGroup>
+    <PackageReference Include="RhinoCommon" Version="7.*" />
+  </ItemGroup>
+
+  <!-- -----------------------------------------------------------------------
+       Source files
+       ----------------------------------------------------------------------- -->
+  <ItemGroup>
+    <Compile Include="NetgenNative.cs" />
+    <Compile Include="MeshingParameters.cs" />
+    <Compile Include="TetrahedralMesh.cs" />
+    <Compile Include="NetgenMesher.cs" />
+  </ItemGroup>
+
+</Project>
