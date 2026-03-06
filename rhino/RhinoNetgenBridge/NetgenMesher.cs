@@ -195,18 +195,20 @@ namespace RhinoNetgenBridge
             // ------------------------------------------------------------------
             var nmp = new NetgenNative.NativeMeshingParams
             {
-                MaxH             = meshingParams.MaxElementSize,
-                MinH             = meshingParams.MinElementSize,
-                Fineness         = meshingParams.Fineness,
-                Grading          = meshingParams.Grading,
-                ElementsPerEdge  = meshingParams.ElementsPerEdge,
-                ElementsPerCurve = meshingParams.ElementsPerCurve,
-                CloseEdgeFact    = meshingParams.CloseEdgeFactor,
-                MinEdgeLen       = meshingParams.MinEdgeLength,
-                CloseEdgeEnable  = meshingParams.CloseEdgeRefinement ? 1 : 0,
-                MinEdgeLenEnable = meshingParams.EnforceMinEdgeLength ? 1 : 0,
-                OptSteps2D       = meshingParams.OptimizationSteps2D,
-                OptSteps3D       = meshingParams.OptimizationSteps3D,
+                MaxH               = meshingParams.MaxElementSize,
+                MinH               = meshingParams.MinElementSize,
+                Fineness           = meshingParams.Fineness,
+                Grading            = meshingParams.Grading,
+                ElementsPerEdge    = meshingParams.ElementsPerEdge,
+                ElementsPerCurve   = meshingParams.ElementsPerCurve,
+                CloseEdgeFact      = meshingParams.CloseEdgeFactor,
+                MinEdgeLen         = meshingParams.MinEdgeLength,
+                CloseEdgeEnable    = meshingParams.CloseEdgeRefinement    ? 1 : 0,
+                MinEdgeLenEnable   = meshingParams.EnforceMinEdgeLength   ? 1 : 0,
+                OptSteps2D         = meshingParams.OptimizationSteps2D,
+                OptSteps3D         = meshingParams.OptimizationSteps3D,
+                OptSurfMeshEnable  = meshingParams.EnableSurfaceOptimization ? 1 : 0,
+                OptVolMeshEnable   = meshingParams.EnableVolumeOptimization  ? 1 : 0,
             };
 
             // ------------------------------------------------------------------
@@ -248,7 +250,15 @@ namespace RhinoNetgenBridge
                 NetgenNative.NGW_GetPoints(resultHandle, outVertices);
                 NetgenNative.NGW_GetTets(resultHandle, outTets);
 
-                return new TetrahedralMesh(outVertices, outTets);
+                var result = new TetrahedralMesh(outVertices, outTets);
+
+                // Post-generation Laplacian smoothing (optional)
+                if (meshingParams.LaplacianSmoothingIterations > 0)
+                    result = result.CreateSmoothed(
+                        meshingParams.LaplacianSmoothingIterations,
+                        meshingParams.LaplacianSmoothingFactor);
+
+                return result;
             }
             finally
             {

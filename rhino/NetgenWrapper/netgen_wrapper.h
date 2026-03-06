@@ -66,10 +66,12 @@ typedef struct NGW_MeshingParams
     double minedgelen;       /*!< Minimum edge length when enforced (1e-4)  */
 
     /* --- Integer flags (grouped to avoid padding) ---------------------- */
-    int    closeedgeenable;  /*!< Enable close-edge refinement (0)          */
-    int    minedgelenenable; /*!< Enforce minimum edge length (0)           */
-    int    optsteps_2d;      /*!< 2-D optimisation steps (3)                */
-    int    optsteps_3d;      /*!< 3-D optimisation steps (3)                */
+    int    closeedgeenable;   /*!< Enable close-edge refinement (0)         */
+    int    minedgelenenable;  /*!< Enforce minimum edge length (0)          */
+    int    optsteps_2d;       /*!< 2-D optimisation steps (3)               */
+    int    optsteps_3d;       /*!< 3-D optimisation steps (3)               */
+    int    optsurfmeshenable; /*!< Enable surface mesh optimisation (1)     */
+    int    optvolmeshenable;  /*!< Enable volume mesh optimisation (1)      */
 } NGW_MeshingParams;
 
 

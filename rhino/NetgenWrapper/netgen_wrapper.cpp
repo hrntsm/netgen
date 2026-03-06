@@ -61,8 +61,8 @@ static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst
     dst.quad_dominated     = 0;
     dst.meshsize_filename  = nullptr;
     dst.uselocalh          = 1;
-    dst.optsurfmeshenable  = 1;
-    dst.optvolmeshenable   = 1;
+    dst.optsurfmeshenable  = src->optsurfmeshenable;
+    dst.optvolmeshenable   = src->optvolmeshenable;
     dst.invert_tets        = 0;
     dst.invert_trigs       = 0;
     dst.check_overlap              = 1;
@@ -252,10 +252,12 @@ NGWRAPPER_API void NGW_DefaultMeshingParams(NGW_MeshingParams* mp)
     mp->elementspercurve = 2.0;
     mp->closeedgefact    = 2.0;
     mp->minedgelen       = 1e-4;
-    mp->closeedgeenable  = 0;
-    mp->minedgelenenable = 0;
-    mp->optsteps_2d      = 3;
-    mp->optsteps_3d      = 3;
+    mp->closeedgeenable   = 0;
+    mp->minedgelenenable  = 0;
+    mp->optsteps_2d       = 3;
+    mp->optsteps_3d       = 3;
+    mp->optsurfmeshenable = 1;
+    mp->optvolmeshenable  = 1;
 }
 
 NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(

@@ -50,6 +50,8 @@ namespace RhinoNetgenBridge
             public int MinEdgeLenEnable;
             public int OptSteps2D;
             public int OptSteps3D;
+            public int OptSurfMeshEnable;
+            public int OptVolMeshEnable;
         }
 
         /// <summary>Mirror of <c>NGW_PointSizeRestriction</c>.</summary>

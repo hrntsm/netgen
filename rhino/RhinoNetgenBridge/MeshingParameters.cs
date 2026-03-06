@@ -103,8 +103,22 @@ namespace RhinoNetgenBridge
         public double MinEdgeLength { get; set; } = 1e-4;
 
         // -----------------------------------------------------------------------
-        // Optimization
+        // Netgen built-in optimization
         // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Enable netgen's built-in surface mesh optimisation (node smoothing,
+        /// edge swapping on the surface).
+        /// Default: <c>true</c>.
+        /// </summary>
+        public bool EnableSurfaceOptimization { get; set; } = true;
+
+        /// <summary>
+        /// Enable netgen's built-in volume mesh optimisation (node smoothing,
+        /// edge/face swapping in 3-D).
+        /// Default: <c>true</c>.
+        /// </summary>
+        public bool EnableVolumeOptimization { get; set; } = true;
 
         /// <summary>
         /// Number of 2-D (surface) mesh optimisation iterations.
@@ -119,6 +133,50 @@ namespace RhinoNetgenBridge
         /// Default: 3.
         /// </summary>
         public int OptimizationSteps3D { get; set; } = 3;
+
+        // -----------------------------------------------------------------------
+        // Post-generation Laplacian smoothing
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Number of Laplacian smoothing iterations applied to the mesh after
+        /// netgen finishes generation.
+        ///
+        /// <para>Laplacian smoothing moves each <b>interior</b> vertex towards
+        /// the weighted average of its direct tet-neighbours, making the volume
+        /// mesh smoother.  Boundary (surface) vertices are never moved, so the
+        /// outer shape is preserved.</para>
+        ///
+        /// <para>0 = disabled (default).  Values in the range 3–10 are typical.
+        /// Very high iteration counts may reduce element quality near the
+        /// boundary; prefer lower iteration counts combined with a higher
+        /// <see cref="LaplacianSmoothingFactor"/> if needed.</para>
+        /// </summary>
+        public int LaplacianSmoothingIterations { get; set; } = 0;
+
+        /// <summary>
+        /// Relaxation factor λ ∈ (0, 1] for each Laplacian smoothing step.
+        ///
+        /// <para>At each step a vertex is moved by
+        /// <c>λ × (centroid − current_position)</c>:
+        /// <list type="bullet">
+        ///   <item><description>
+        ///     <c>1.0</c> – move fully to the centroid (fastest convergence but
+        ///     can cause mesh shrinkage on convex regions).
+        ///   </description></item>
+        ///   <item><description>
+        ///     <c>0.5</c> – half-step; conservative, rarely distorts elements
+        ///     (default).
+        ///   </description></item>
+        ///   <item><description>
+        ///     Smaller values require more iterations to achieve the same
+        ///     smoothing.
+        ///   </description></item>
+        /// </list>
+        /// </para>
+        /// Default: 0.5.
+        /// </summary>
+        public double LaplacianSmoothingFactor { get; set; } = 0.5;
 
         // -----------------------------------------------------------------------
         // Factory presets
