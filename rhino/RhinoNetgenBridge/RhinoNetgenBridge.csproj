@@ -4,8 +4,8 @@
     <!-- Target .NET Framework 4.8 to match Rhino 7/8 on Windows, and
          net7.0 for Rhino 8 on macOS / cross-platform development.
          Adjust the TargetFramework(s) to match your Rhino version. -->
-    <TargetFramework>net48</TargetFramework>
-    <!-- Uncomment the line below to multi-target (.NET 4.8 + .NET 7):
+    <TargetFrameworks>net48;net7.0</TargetFrameworks>
+    <!-- Uncomment the line above to multi-target (.NET 4.8 + .NET 7):
     <TargetFrameworks>net48;net7.0</TargetFrameworks>
     -->
 
@@ -34,6 +34,13 @@
        ----------------------------------------------------------------------- -->
   <ItemGroup>
     <PackageReference Include="RhinoCommon" Version="7.*" />
+  </ItemGroup>
+
+  <!-- Test project can access internal types -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>RhinoNetgenBridge.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <!-- -----------------------------------------------------------------------
