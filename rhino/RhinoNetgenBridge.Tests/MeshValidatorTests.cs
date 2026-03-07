@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Rhino.Geometry;
 using Xunit;
 
@@ -172,12 +173,12 @@ namespace RhinoNetgenBridge.Tests
         {
             MeshValidationResult result = MeshValidator.Validate(MakeOpenTetrahedron());
 
-            foreach (var issue in result.Issues)
+            Assert.All(result.Issues, issue =>
             {
                 // All non-truncation issues for an open mesh should be NakedEdge
                 if (!issue.Description.Contains("truncated"))
                     Assert.Equal(MeshIssueType.NakedEdge, issue.Type);
-            }
+            });
         }
 
         [Fact]
@@ -185,28 +186,22 @@ namespace RhinoNetgenBridge.Tests
         {
             MeshValidationResult result = MeshValidator.Validate(MakeNonManifoldMesh());
 
-            bool found = false;
-            foreach (var issue in result.Issues)
-            {
-                if (issue.Type == MeshIssueType.NonManifoldEdge)
-                {
-                    found = true;
-                    Assert.Contains("non-manifold", issue.Description,
-                        StringComparison.OrdinalIgnoreCase);
-                    break;
-                }
-            }
-            Assert.True(found, "Expected at least one NonManifoldEdge issue.");
+            var issue = result.Issues.FirstOrDefault(i => i.Type == MeshIssueType.NonManifoldEdge);
+            Assert.NotNull(issue);
+            Assert.Contains("non-manifold", issue!.Description,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
         public void Validate_DegenerateFaceIssue_CarriesFaceIndex()
         {
+            // The single-triangle mesh also has naked edges, so Issues contains more than
+            // just the degenerate-face entry. Find the degenerate-face issue specifically.
             MeshValidationResult result = MeshValidator.Validate(MakeMeshWithDegenerateFace());
 
-            Assert.Equal(1, result.Issues.Count);
-            Assert.Equal(MeshIssueType.DegenerateFace, result.Issues[0].Type);
-            Assert.Equal(0, result.Issues[0].Index); // first (only) face
+            var issue = result.Issues.FirstOrDefault(i => i.Type == MeshIssueType.DegenerateFace);
+            Assert.NotNull(issue);
+            Assert.Equal(0, issue!.Index); // first (only) face
         }
 
         // ---------------------------------------------------------------
@@ -263,7 +258,7 @@ namespace RhinoNetgenBridge.Tests
             var issue = new MeshIssue(MeshIssueType.DegenerateFace, "Zero area.", 5);
             string s = issue.ToString();
 
-            Assert.Contains("5", s);
+            Assert.Contains("(index 5)", s);
         }
 
         [Fact]

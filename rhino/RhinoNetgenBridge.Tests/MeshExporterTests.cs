@@ -15,6 +15,9 @@ namespace RhinoNetgenBridge.Tests
     /// </summary>
     public sealed class MeshExporterTests
     {
+        // Cached instances used in null-guard tests to avoid re-allocating per test.
+        private static readonly TetrahedralMesh _tet4 = MakeSingleTet4();
+
         // ---------------------------------------------------------------
         // Test mesh factories
         // ---------------------------------------------------------------
@@ -158,7 +161,7 @@ namespace RhinoNetgenBridge.Tests
         [Fact]
         public void WriteAbaqus_TwoElements_ElementCountInElset()
         {
-            // *Elset,…,generate / 1, 2, 1  → "2" must appear on the generate line
+            // *Elset,…,generate / 1, 2, 1  → exact "1, 2, 1" (start, end, step)
             string path = Path.GetTempFileName();
             try
             {
@@ -167,8 +170,7 @@ namespace RhinoNetgenBridge.Tests
                 int elsetLine = Array.FindIndex(lines,
                     l => l.TrimStart().StartsWith("*Elset"));
                 Assert.True(elsetLine >= 0);
-                string generateLine = lines[elsetLine + 1];
-                Assert.Contains("2", generateLine);
+                Assert.Equal("1, 2, 1", lines[elsetLine + 1]);
             }
             finally { File.Delete(path); }
         }
@@ -404,7 +406,7 @@ namespace RhinoNetgenBridge.Tests
         [Fact]
         public void WriteAbaqus_NullPath_ThrowsArgumentNullException() =>
             Assert.Throws<ArgumentNullException>(() =>
-                MeshExporter.WriteAbaqus(MakeSingleTet4(), null!));
+                MeshExporter.WriteAbaqus(_tet4, null!));
 
         [Fact]
         public void WriteVtk_NullMesh_ThrowsArgumentNullException() =>
@@ -414,7 +416,7 @@ namespace RhinoNetgenBridge.Tests
         [Fact]
         public void WriteVtk_NullPath_ThrowsArgumentNullException() =>
             Assert.Throws<ArgumentNullException>(() =>
-                MeshExporter.WriteVtk(MakeSingleTet4(), null!));
+                MeshExporter.WriteVtk(_tet4, null!));
 
         [Fact]
         public void WriteGmsh_NullMesh_ThrowsArgumentNullException() =>
@@ -424,7 +426,7 @@ namespace RhinoNetgenBridge.Tests
         [Fact]
         public void WriteGmsh_NullPath_ThrowsArgumentNullException() =>
             Assert.Throws<ArgumentNullException>(() =>
-                MeshExporter.WriteGmsh(MakeSingleTet4(), null!));
+                MeshExporter.WriteGmsh(_tet4, null!));
 
         [Fact]
         public void WriteNastran_NullMesh_ThrowsArgumentNullException() =>
@@ -434,6 +436,6 @@ namespace RhinoNetgenBridge.Tests
         [Fact]
         public void WriteNastran_NullPath_ThrowsArgumentNullException() =>
             Assert.Throws<ArgumentNullException>(() =>
-                MeshExporter.WriteNastran(MakeSingleTet4(), null!));
+                MeshExporter.WriteNastran(_tet4, null!));
     }
 }
