@@ -72,6 +72,8 @@ typedef struct NGW_MeshingParams
     int    optsteps_3d;       /*!< 3-D optimisation steps (3)               */
     int    optsurfmeshenable; /*!< Enable surface mesh optimisation (1)     */
     int    optvolmeshenable;  /*!< Enable volume mesh optimisation (1)      */
+    int    second_order;      /*!< Generate TET10 second-order elements (0) */
+    int    uniform_ref_steps; /*!< Uniform refinement iterations after mesh (0) */
 } NGW_MeshingParams;
 
 
@@ -106,6 +108,50 @@ typedef struct NGW_BoxSizeRestriction
     double h;    /*!< Maximum element size inside the box */
 } NGW_BoxSizeRestriction;
 
+
+/* =========================================================================
+ * Progress callback
+ * ======================================================================= */
+
+/*!
+ * Callback invoked at key meshing stages to report progress.
+ *
+ * \param stage   Short ASCII label: "edges", "surface", "volume", "done"
+ * \param percent Approximate completion percentage (0–100).
+ *
+ * The callback is invoked from the same thread that called
+ * NGW_GenerateTetrahedralMesh / Ex.  Do NOT call any NGW_* function
+ * from inside the callback.
+ */
+typedef void (*NGW_ProgressCallback)(const char* stage, int percent);
+
+/** Register a global progress callback (may be NULL to clear). */
+NGWRAPPER_API void NGW_SetProgressCallback(NGW_ProgressCallback callback);
+
+/** Clear the progress callback (equivalent to NGW_SetProgressCallback(NULL)). */
+NGWRAPPER_API void NGW_ClearProgressCallback(void);
+
+/* =========================================================================
+ * Error reporting
+ * ======================================================================= */
+
+/** Error codes returned by NGW_GetLastError(). */
+typedef enum NGW_ErrorCode
+{
+    NGW_OK                          = 0,
+    NGW_ERROR_INVALID_INPUT         = 1,
+    NGW_ERROR_STL_INIT_FAILED       = 2,
+    NGW_ERROR_EDGE_GENERATION_FAILED= 3,
+    NGW_ERROR_SURFACE_MESH_FAILED   = 4,
+    NGW_ERROR_VOLUME_MESH_FAILED    = 5
+} NGW_ErrorCode;
+
+/**
+ * Return the error code from the most recent NGW_Generate* call.
+ * Returns NGW_OK (0) if the last call succeeded.
+ * The value is per-thread (thread-local storage).
+ */
+NGWRAPPER_API int NGW_GetLastError(void);
 
 /* =========================================================================
  * Library lifecycle
@@ -194,6 +240,12 @@ NGWRAPPER_API int NGW_GetNumPoints(void* result);
 NGWRAPPER_API int NGW_GetNumTets(void* result);
 
 /**
+ * Number of nodes per element: 4 for TET4 (default), 10 for TET10
+ * (second_order=1).  Returns 0 on NULL handle.
+ */
+NGWRAPPER_API int NGW_GetNodesPerElement(void* result);
+
+/**
  * Copy vertex coordinates into a caller-supplied buffer.
  * Buffer length must be NGW_GetNumPoints(result) * 3.
  * Layout: [x0,y0,z0, x1,y1,z1, …]
@@ -201,9 +253,10 @@ NGWRAPPER_API int NGW_GetNumTets(void* result);
 NGWRAPPER_API void NGW_GetPoints(void* result, double* outVertices);
 
 /**
- * Copy tetrahedral element indices (0-based) into a caller-supplied buffer.
- * Buffer length must be NGW_GetNumTets(result) * 4.
- * Layout: [a0,b0,c0,d0, a1,b1,c1,d1, …]
+ * Copy element node indices (0-based) into a caller-supplied buffer.
+ * Buffer length must be NGW_GetNumTets(result) * NGW_GetNodesPerElement(result).
+ * TET4 layout:  [a0,b0,c0,d0,  a1,b1,c1,d1,  …]
+ * TET10 layout: [n0..n9, n0..n9, …]  (corner nodes 0–3, mid-edge nodes 4–9)
  */
 NGWRAPPER_API void NGW_GetTets(void* result, int* outTets);
 

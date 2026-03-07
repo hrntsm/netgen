@@ -7,7 +7,9 @@ namespace RhinoNetgenBridge
     /// Stores the result of a tetrahedral meshing operation.
     ///
     /// Vertices are stored in a flat array [x0,y0,z0, x1,y1,z1, …] and
-    /// tetrahedra as a flat array of 0-based vertex indices [a,b,c,d, …].
+    /// tetrahedra as a flat array of 0-based vertex indices.
+    /// For TET4 (linear): [a,b,c,d, …] (4 nodes per element).
+    /// For TET10 (quadratic): [n0..n9, …] (10 nodes per element, corner nodes 0–3 then mid-edge nodes 4–9).
     /// </summary>
     public sealed class TetrahedralMesh
     {
@@ -19,22 +21,32 @@ namespace RhinoNetgenBridge
         public double[] Vertices { get; }
 
         /// <summary>
-        /// Flat array of tetrahedral element indices (0-based).
-        /// Length = <see cref="TetCount"/> * 4.
-        /// Layout: [a0,b0,c0,d0, a1,b1,c1,d1, …]
+        /// Flat array of tetrahedral element node indices (0-based).
+        /// Length = <see cref="TetCount"/> * <see cref="NodesPerElement"/>.
         /// </summary>
         public int[] Tetrahedra { get; }
+
+        /// <summary>
+        /// Number of nodes per element.
+        /// 4 for linear TET4 elements (default).
+        /// 10 for quadratic TET10 elements (second-order meshing).
+        /// </summary>
+        public int NodesPerElement { get; }
 
         /// <summary>Number of vertices in the mesh.</summary>
         public int VertexCount => Vertices.Length / 3;
 
         /// <summary>Number of tetrahedral elements in the mesh.</summary>
-        public int TetCount => Tetrahedra.Length / 4;
+        public int TetCount => Tetrahedra.Length / NodesPerElement;
 
-        internal TetrahedralMesh(double[] vertices, int[] tetrahedra)
+        internal TetrahedralMesh(double[] vertices, int[] tetrahedra, int nodesPerElement = 4)
         {
-            Vertices   = vertices   ?? throw new ArgumentNullException(nameof(vertices));
-            Tetrahedra = tetrahedra ?? throw new ArgumentNullException(nameof(tetrahedra));
+            Vertices         = vertices   ?? throw new ArgumentNullException(nameof(vertices));
+            Tetrahedra       = tetrahedra ?? throw new ArgumentNullException(nameof(tetrahedra));
+            NodesPerElement  = (nodesPerElement == 4 || nodesPerElement == 10)
+                ? nodesPerElement
+                : throw new ArgumentOutOfRangeException(nameof(nodesPerElement),
+                    "nodesPerElement must be 4 (TET4) or 10 (TET10).");
         }
 
         /// <summary>
@@ -50,15 +62,32 @@ namespace RhinoNetgenBridge
         }
 
         /// <summary>
-        /// Return the four 0-based vertex indices of tetrahedron
+        /// Return the four corner 0-based vertex indices of tetrahedron
         /// <paramref name="index"/> as a value tuple.
+        /// For TET10, only the 4 corner nodes (indices 0–3) are returned.
+        /// Use <see cref="GetTetrahedronAllNodes"/> to get all 10 nodes.
         /// </summary>
         public (int A, int B, int C, int D) GetTetrahedron(int index)
         {
             if (index < 0 || index >= TetCount)
                 throw new ArgumentOutOfRangeException(nameof(index));
-            int i = index * 4;
+            int i = index * NodesPerElement;
             return (Tetrahedra[i], Tetrahedra[i + 1], Tetrahedra[i + 2], Tetrahedra[i + 3]);
+        }
+
+        /// <summary>
+        /// Return all node indices for element <paramref name="index"/>.
+        /// Returns a new array of length <see cref="NodesPerElement"/>
+        /// (4 for TET4, 10 for TET10).
+        /// </summary>
+        public int[] GetTetrahedronAllNodes(int index)
+        {
+            if (index < 0 || index >= TetCount)
+                throw new ArgumentOutOfRangeException(nameof(index));
+            int i = index * NodesPerElement;
+            var nodes = new int[NodesPerElement];
+            Array.Copy(Tetrahedra, i, nodes, 0, NodesPerElement);
+            return nodes;
         }
 
         // ---------------------------------------------------------------
@@ -78,7 +107,7 @@ namespace RhinoNetgenBridge
             if (index < 0 || index >= TetCount)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            int bi = index * 4;
+            int bi = index * NodesPerElement;
             return QualityComputer.Compute(
                 Vertices,
                 Tetrahedra[bi],
@@ -99,7 +128,7 @@ namespace RhinoNetgenBridge
             var result = new TetQuality[TetCount];
             for (int i = 0; i < TetCount; ++i)
             {
-                int bi = i * 4;
+                int bi = i * NodesPerElement;
                 result[i] = QualityComputer.Compute(
                     Vertices,
                     Tetrahedra[bi],
@@ -214,13 +243,17 @@ namespace RhinoNetgenBridge
         /// <returns>New <see cref="TetrahedralMesh"/> with smoothed vertex positions.</returns>
         public TetrahedralMesh CreateSmoothed(int iterations, double factor = 0.5)
         {
+            if (NodesPerElement != 4)
+                throw new InvalidOperationException(
+                    "Laplacian smoothing is only supported for TET4 (linear) elements. " +
+                    "Second-order (TET10) meshes cannot be smoothed with this method.");
             if (iterations < 0)  throw new ArgumentOutOfRangeException(nameof(iterations));
             if (factor <= 0 || factor > 1.0)
                 throw new ArgumentOutOfRangeException(nameof(factor),
                     "factor must be in the range (0, 1].");
 
             if (iterations == 0)
-                return new TetrahedralMesh((double[])Vertices.Clone(), Tetrahedra);
+                return new TetrahedralMesh((double[])Vertices.Clone(), Tetrahedra, NodesPerElement);
 
             int nv = VertexCount;
             int ne = TetCount;
@@ -328,7 +361,7 @@ namespace RhinoNetgenBridge
                 next = tmp;
             }
 
-            return new TetrahedralMesh(cur, Tetrahedra);
+            return new TetrahedralMesh(cur, Tetrahedra, NodesPerElement);
         }
 
         // ---------------------------------------------------------------

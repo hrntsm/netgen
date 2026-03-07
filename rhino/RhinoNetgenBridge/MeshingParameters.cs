@@ -179,6 +179,42 @@ namespace RhinoNetgenBridge
         public double LaplacianSmoothingFactor { get; set; } = 0.5;
 
         // -----------------------------------------------------------------------
+        // Second-order elements
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Generate second-order (TET10) tetrahedral elements instead of the
+        /// default linear (TET4) elements.
+        ///
+        /// <para>TET10 elements add a mid-edge node on each of the 6 edges of
+        /// a tetrahedron (10 nodes total per element).  They are required for
+        /// quadratic-accuracy finite element analyses.</para>
+        ///
+        /// <para>When <c>true</c>:<br/>
+        /// – <see cref="TetrahedralMesh.NodesPerElement"/> returns 10.<br/>
+        /// – <see cref="TetrahedralMesh.CreateSmoothed"/> is disabled (throws).<br/>
+        /// – Memory usage roughly doubles compared to TET4.</para>
+        ///
+        /// Default: <c>false</c>.
+        /// </summary>
+        public bool SecondOrder { get; set; } = false;
+
+        // -----------------------------------------------------------------------
+        // Uniform refinement
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Number of uniform refinement passes applied after volume meshing.
+        ///
+        /// <para>Each pass splits every tetrahedron into 8 child tetrahedra by
+        /// bisecting all edges.  This multiplies the element count by 8 per pass,
+        /// so use small values (1–2).</para>
+        ///
+        /// Default: 0 (disabled).
+        /// </summary>
+        public int UniformRefinementSteps { get; set; } = 0;
+
+        // -----------------------------------------------------------------------
         // Factory presets
         // -----------------------------------------------------------------------
 

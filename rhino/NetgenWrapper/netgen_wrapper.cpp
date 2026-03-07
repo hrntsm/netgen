@@ -18,13 +18,28 @@ namespace nglib {
 using namespace nglib;
 
 // ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
+
+static NGW_ProgressCallback s_progressCallback = nullptr;
+
+#ifdef _WIN32
+  static __declspec(thread) int s_lastError = 0;
+#else
+  static __thread int s_lastError = 0;
+#endif
+
+// ---------------------------------------------------------------------------
 // Internal result type
 // ---------------------------------------------------------------------------
 
 struct NgMeshResult
 {
-    std::vector<double> vertices; ///< Flat [x,y,z, …] array, 0-based
-    std::vector<int>    tets;     ///< Flat [a,b,c,d, …] array, 0-based
+    std::vector<double> vertices;    ///< Flat [x,y,z, …] array, 0-based
+    std::vector<int>    tets;        ///< Flat element node indices, 0-based
+    int                 nodesPerElement; ///< 4 (TET4) or 10 (TET10)
+
+    NgMeshResult() : nodesPerElement(4) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -57,7 +72,7 @@ static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst
     dst.minedgelen         = src->minedgelen;
     dst.optsteps_2d        = src->optsteps_2d;
     dst.optsteps_3d        = src->optsteps_3d;
-    dst.second_order       = 0;
+    dst.second_order       = 0; // handled separately via Ng_Generate_SecondOrder
     dst.quad_dominated     = 0;
     dst.meshsize_filename  = nullptr;
     dst.uselocalh          = 1;
@@ -67,6 +82,13 @@ static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst
     dst.invert_trigs       = 0;
     dst.check_overlap              = 1;
     dst.check_overlapping_boundary = 1;
+}
+
+/// Fire progress callback if one is registered.
+static void fireProgress(const char* stage, int percent)
+{
+    if (s_progressCallback)
+        s_progressCallback(stage, percent);
 }
 
 // ---------------------------------------------------------------------------
@@ -84,9 +106,14 @@ static void* generateMeshImpl(
     int                             numBoxRestrictions,
     const NGW_BoxSizeRestriction*   boxRestrictions)
 {
+    s_lastError = NGW_OK;
+
     if (numVertices <= 0 || numTriangles <= 0
         || vertices == nullptr || triangles == nullptr || mp == nullptr)
+    {
+        s_lastError = NGW_ERROR_INVALID_INPUT;
         return nullptr;
+    }
 
     // ------------------------------------------------------------------
     // 1. Build STL geometry from the caller's triangle soup
@@ -117,7 +144,10 @@ static void* generateMeshImpl(
 
     Ng_Result res = Ng_STL_InitSTLGeometry(stlGeom);
     if (res != NG_OK)
+    {
+        s_lastError = NGW_ERROR_STL_INIT_FAILED;
         return nullptr;
+    }
 
     // ------------------------------------------------------------------
     // 2. Set up meshing parameters
@@ -172,31 +202,59 @@ static void* generateMeshImpl(
     // ------------------------------------------------------------------
     // 4. Run meshing pipeline
     // ------------------------------------------------------------------
+    fireProgress("edges", 10);
     res = Ng_STL_MakeEdges(stlGeom, mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
+        s_lastError = NGW_ERROR_EDGE_GENERATION_FAILED;
         return nullptr;
     }
 
+    fireProgress("surface", 35);
     res = Ng_STL_GenerateSurfaceMesh(stlGeom, mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
+        s_lastError = NGW_ERROR_SURFACE_MESH_FAILED;
         return nullptr;
     }
 
+    fireProgress("volume", 60);
     res = Ng_GenerateVolumeMesh(mesh, &ngmp);
     if (res != NG_OK)
     {
         Ng_DeleteMesh(mesh);
+        s_lastError = NGW_ERROR_VOLUME_MESH_FAILED;
         return nullptr;
     }
+
+    // ------------------------------------------------------------------
+    // 4a. Optional: second-order elements (TET10)
+    // ------------------------------------------------------------------
+    if (mp->second_order)
+    {
+        fireProgress("second_order", 75);
+        Ng_Generate_SecondOrder(mesh);
+    }
+
+    // ------------------------------------------------------------------
+    // 4b. Optional: uniform refinement
+    // ------------------------------------------------------------------
+    if (mp->uniform_ref_steps > 0)
+    {
+        fireProgress("refinement", 80);
+        for (int r = 0; r < mp->uniform_ref_steps; ++r)
+            Ng_STL_Uniform_Refinement(stlGeom, mesh, &ngmp);
+    }
+
+    fireProgress("extract", 90);
 
     // ------------------------------------------------------------------
     // 5. Extract result (convert from 1-based netgen indices to 0-based)
     // ------------------------------------------------------------------
     NgMeshResult* result = new NgMeshResult();
+    result->nodesPerElement = mp->second_order ? 10 : 4;
 
     int np = Ng_GetNP(mesh);
     result->vertices.resize(static_cast<size_t>(np) * 3);
@@ -210,18 +268,18 @@ static void* generateMeshImpl(
     }
 
     int ne = Ng_GetNE(mesh);
-    result->tets.resize(static_cast<size_t>(ne) * 4);
+    int npe = result->nodesPerElement;
+    result->tets.resize(static_cast<size_t>(ne) * npe);
     for (int i = 1; i <= ne; ++i)
     {
         int pi[10] = {};
         Ng_GetVolumeElement(mesh, i, pi);
-        result->tets[(i - 1) * 4 + 0] = pi[0] - 1;
-        result->tets[(i - 1) * 4 + 1] = pi[1] - 1;
-        result->tets[(i - 1) * 4 + 2] = pi[2] - 1;
-        result->tets[(i - 1) * 4 + 3] = pi[3] - 1;
+        for (int k = 0; k < npe; ++k)
+            result->tets[(i - 1) * npe + k] = pi[k] - 1;
     }
 
     Ng_DeleteMesh(mesh);
+    fireProgress("done", 100);
     return static_cast<void*>(result);
 }
 
@@ -230,6 +288,21 @@ static void* generateMeshImpl(
 // ---------------------------------------------------------------------------
 
 extern "C" {
+
+NGWRAPPER_API void NGW_SetProgressCallback(NGW_ProgressCallback callback)
+{
+    s_progressCallback = callback;
+}
+
+NGWRAPPER_API void NGW_ClearProgressCallback(void)
+{
+    s_progressCallback = nullptr;
+}
+
+NGWRAPPER_API int NGW_GetLastError(void)
+{
+    return s_lastError;
+}
 
 NGWRAPPER_API void NGW_Init(void)
 {
@@ -258,6 +331,8 @@ NGWRAPPER_API void NGW_DefaultMeshingParams(NGW_MeshingParams* mp)
     mp->optsteps_3d       = 3;
     mp->optsurfmeshenable = 1;
     mp->optvolmeshenable  = 1;
+    mp->second_order      = 0;
+    mp->uniform_ref_steps = 0;
 }
 
 NGWRAPPER_API void* NGW_GenerateTetrahedralMesh(
@@ -298,8 +373,15 @@ NGWRAPPER_API int NGW_GetNumPoints(void* result)
 NGWRAPPER_API int NGW_GetNumTets(void* result)
 {
     if (!result) return 0;
-    return static_cast<int>(
-        reinterpret_cast<NgMeshResult*>(result)->tets.size() / 4);
+    const NgMeshResult* r = reinterpret_cast<NgMeshResult*>(result);
+    int npe = r->nodesPerElement > 0 ? r->nodesPerElement : 4;
+    return static_cast<int>(r->tets.size() / npe);
+}
+
+NGWRAPPER_API int NGW_GetNodesPerElement(void* result)
+{
+    if (!result) return 0;
+    return reinterpret_cast<NgMeshResult*>(result)->nodesPerElement;
 }
 
 NGWRAPPER_API void NGW_GetPoints(void* result, double* outVertices)

@@ -12,8 +12,8 @@ namespace RhinoNetgenBridge
     ///   NetgenMesher.Initialize();  // once per application
     ///
     ///   var mp = MeshingParameters.Fine();
-    ///   mp.ElementsPerEdge  = 4;    // finer along geometry edges
-    ///   mp.ElementsPerCurve = 4;    // finer on curved surfaces
+    ///   mp.ElementsPerEdge  = 4;
+    ///   mp.ElementsPerCurve = 4;
     ///
     ///   // Optional local refinement
     ///   var ptRestrictions = new[]
@@ -25,10 +25,15 @@ namespace RhinoNetgenBridge
     ///       new BoxSizeRestriction(new Point3d(-5,-5,0), new Point3d(5,5,3), 0.8),
     ///   };
     ///
+    ///   // Optional progress feedback
+    ///   Action&lt;string,int&gt; progress = (stage, pct) =>
+    ///       RhinoApp.WriteLine($"[{pct}%] {stage}");
+    ///
     ///   TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(
     ///       brep, mp,
     ///       pointRestrictions: ptRestrictions,
-    ///       boxRestrictions:   boxRestrictions);
+    ///       boxRestrictions:   boxRestrictions,
+    ///       onProgress:        progress);
     ///
     ///   RhinoApp.WriteLine($"Vertices: {tet.VertexCount}  Tets: {tet.TetCount}");
     ///   doc.Objects.AddMesh(tet.ToRhinoSurfaceMesh());
@@ -42,6 +47,11 @@ namespace RhinoNetgenBridge
     {
         private static bool _initialised;
         private static readonly object _initLock = new object();
+
+        // Per-thread storage for the native delegate so that the GC does not
+        // collect it while the native call is in progress.
+        [ThreadStatic]
+        private static NetgenNative.ProgressCallbackDelegate _nativeProgressDelegate;
 
         // ---------------------------------------------------------------
         // Lifecycle
@@ -78,7 +88,7 @@ namespace RhinoNetgenBridge
         }
 
         // ---------------------------------------------------------------
-        // Meshing from Rhino Brep
+        // Meshing from a single Rhino Brep
         // ---------------------------------------------------------------
 
         /// <summary>
@@ -97,31 +107,121 @@ namespace RhinoNetgenBridge
         /// </param>
         /// <param name="pointRestrictions">
         ///   Optional point-based local size restrictions.
-        ///   Each entry restricts the element size at and near a given point.
         /// </param>
         /// <param name="boxRestrictions">
         ///   Optional box-based local size restrictions.
-        ///   Each entry restricts the element size inside an axis-aligned box.
         /// </param>
-        /// <returns>
-        ///   A <see cref="TetrahedralMesh"/>, or <c>null</c> if meshing failed.
-        /// </returns>
+        /// <param name="onProgress">
+        ///   Optional callback invoked at key meshing stages.
+        ///   Receives a stage name ("edges", "surface", "volume", "done") and
+        ///   an approximate completion percentage (0–100).
+        /// </param>
+        /// <returns>A <see cref="TetrahedralMesh"/> with the generated elements.</returns>
+        /// <exception cref="NetgenMeshingException">
+        ///   Thrown if the netgen kernel reports an error.
+        /// </exception>
         public static TetrahedralMesh GenerateFromBrep(
             Brep brep,
             MeshingParameters meshingParams = null,
             Rhino.Geometry.MeshingParameters rhinoMeshParams = null,
             IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
-            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null)
+            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
+            Action<string, int> onProgress = null)
         {
             if (brep == null) throw new ArgumentNullException(nameof(brep));
             EnsureInitialised();
 
             Mesh surfaceMesh = TessellateBrep(brep, rhinoMeshParams);
             if (surfaceMesh == null || surfaceMesh.Faces.Count == 0)
-                return null;
+                throw new NetgenMeshingException(NetgenErrorCode.InvalidInput,
+                    "Failed to tessellate the Brep into a surface mesh. " +
+                    "Ensure the Brep is a closed solid.");
 
             return GenerateFromMesh(surfaceMesh, meshingParams,
-                                    pointRestrictions, boxRestrictions);
+                                    pointRestrictions, boxRestrictions, onProgress);
+        }
+
+        // ---------------------------------------------------------------
+        // Meshing from multiple Rhino Breps (assembly)
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Generate a tetrahedral mesh from an assembly of closed Rhino
+        /// <see cref="Brep"/> objects.
+        ///
+        /// <para>All Breps are tessellated, combined into a single closed
+        /// surface mesh, and then passed to netgen for volume meshing.  The
+        /// resulting tetrahedral mesh spans the union of all enclosed volumes.</para>
+        ///
+        /// <para>Best results are obtained when the Breps form a single
+        /// watertight solid (e.g. a BooleanUnion result).  Overlapping Breps
+        /// or open shells may cause meshing to fail.</para>
+        /// </summary>
+        /// <param name="breps">
+        ///   One or more closed solid Breps.  Must not be null or empty.
+        /// </param>
+        /// <param name="meshingParams">
+        ///   Netgen meshing parameters, or <c>null</c> for medium defaults.
+        /// </param>
+        /// <param name="rhinoMeshParams">
+        ///   Rhino surface-tessellation parameters.  Pass <c>null</c> for
+        ///   Rhino's default smooth settings.
+        /// </param>
+        /// <param name="pointRestrictions">
+        ///   Optional point-based local size restrictions.
+        /// </param>
+        /// <param name="boxRestrictions">
+        ///   Optional box-based local size restrictions.
+        /// </param>
+        /// <param name="onProgress">
+        ///   Optional progress callback.
+        /// </param>
+        /// <returns>A <see cref="TetrahedralMesh"/> with the generated elements.</returns>
+        /// <exception cref="NetgenMeshingException">
+        ///   Thrown if the netgen kernel reports an error.
+        /// </exception>
+        public static TetrahedralMesh GenerateFromBreps(
+            IReadOnlyList<Brep> breps,
+            MeshingParameters meshingParams = null,
+            Rhino.Geometry.MeshingParameters rhinoMeshParams = null,
+            IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
+            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
+            Action<string, int> onProgress = null)
+        {
+            if (breps == null || breps.Count == 0)
+                throw new ArgumentException("At least one Brep is required.", nameof(breps));
+            EnsureInitialised();
+
+            var combined = new Mesh();
+            var mp = rhinoMeshParams ?? Rhino.Geometry.MeshingParameters.Smooth;
+
+            for (int b = 0; b < breps.Count; ++b)
+            {
+                var brep = breps[b];
+                if (brep == null)
+                    throw new ArgumentException($"breps[{b}] is null.", nameof(breps));
+
+                Mesh[] faceMeshes = Mesh.CreateFromBrep(brep, mp);
+                if (faceMeshes == null || faceMeshes.Length == 0)
+                    throw new NetgenMeshingException(NetgenErrorCode.InvalidInput,
+                        $"Failed to tessellate Brep at index {b}. " +
+                        "Ensure all Breps are closed solids.");
+
+                foreach (var m in faceMeshes)
+                    combined.Append(m);
+            }
+
+            combined.Faces.ConvertQuadsToTriangles();
+            combined.Vertices.CombineIdentical(true, true);
+            combined.Weld(Math.PI);
+            combined.Compact();
+
+            if (combined.Faces.Count == 0)
+                throw new NetgenMeshingException(NetgenErrorCode.InvalidInput,
+                    "Combined surface mesh is empty after tessellation.");
+
+            return GenerateFromMesh(combined, meshingParams,
+                                    pointRestrictions, boxRestrictions, onProgress);
         }
 
         // ---------------------------------------------------------------
@@ -145,14 +245,19 @@ namespace RhinoNetgenBridge
         /// <param name="boxRestrictions">
         ///   Optional box-based local size restrictions.
         /// </param>
-        /// <returns>
-        ///   A <see cref="TetrahedralMesh"/>, or <c>null</c> if meshing failed.
-        /// </returns>
+        /// <param name="onProgress">
+        ///   Optional progress callback.
+        /// </param>
+        /// <returns>A <see cref="TetrahedralMesh"/> with the generated elements.</returns>
+        /// <exception cref="NetgenMeshingException">
+        ///   Thrown if the netgen kernel reports an error.
+        /// </exception>
         public static TetrahedralMesh GenerateFromMesh(
             Mesh surfaceMesh,
             MeshingParameters meshingParams = null,
             IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
-            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null)
+            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
+            Action<string, int> onProgress = null)
         {
             if (surfaceMesh == null) throw new ArgumentNullException(nameof(surfaceMesh));
             EnsureInitialised();
@@ -209,51 +314,81 @@ namespace RhinoNetgenBridge
                 OptSteps3D         = meshingParams.OptimizationSteps3D,
                 OptSurfMeshEnable  = meshingParams.EnableSurfaceOptimization ? 1 : 0,
                 OptVolMeshEnable   = meshingParams.EnableVolumeOptimization  ? 1 : 0,
+                SecondOrder        = meshingParams.SecondOrder ? 1 : 0,
+                UniformRefSteps    = meshingParams.UniformRefinementSteps,
             };
 
             // ------------------------------------------------------------------
-            // 4. Build restriction arrays (null when empty)
+            // 4. Register progress callback
+            // ------------------------------------------------------------------
+            if (onProgress != null)
+            {
+                _nativeProgressDelegate = (stage, pct) => onProgress(stage, pct);
+                NetgenNative.NGW_SetProgressCallback(_nativeProgressDelegate);
+            }
+
+            // ------------------------------------------------------------------
+            // 5. Build restriction arrays (null when empty)
             // ------------------------------------------------------------------
             var ptArr  = BuildPointArray(pointRestrictions);
             var boxArr = BuildBoxArray(boxRestrictions);
 
             int npt  = ptArr  != null ? ptArr.Length  : 0;
-            int nbox = boxArr != null ? boxArr.Length  : 0;
+            int nbox = boxArr != null ? boxArr.Length : 0;
 
             // ------------------------------------------------------------------
-            // 5. Call netgen via P/Invoke
+            // 6. Call netgen via P/Invoke
             // ------------------------------------------------------------------
-            IntPtr resultHandle = (npt > 0 || nbox > 0)
-                ? NetgenNative.NGW_GenerateTetrahedralMeshEx(
-                    nv, vertices, nf, triangles,
-                    ref nmp,
-                    npt,  ptArr,
-                    nbox, boxArr)
-                : NetgenNative.NGW_GenerateTetrahedralMesh(
-                    nv, vertices, nf, triangles,
-                    ref nmp);
+            IntPtr resultHandle;
+            try
+            {
+                resultHandle = (npt > 0 || nbox > 0)
+                    ? NetgenNative.NGW_GenerateTetrahedralMeshEx(
+                        nv, vertices, nf, triangles,
+                        ref nmp,
+                        npt,  ptArr,
+                        nbox, boxArr)
+                    : NetgenNative.NGW_GenerateTetrahedralMesh(
+                        nv, vertices, nf, triangles,
+                        ref nmp);
+            }
+            finally
+            {
+                if (onProgress != null)
+                {
+                    NetgenNative.NGW_ClearProgressCallback();
+                    _nativeProgressDelegate = null;
+                }
+            }
 
             if (resultHandle == IntPtr.Zero)
-                return null;
+            {
+                int rawCode = NetgenNative.NGW_GetLastError();
+                var errorCode = (NetgenErrorCode)rawCode;
+                throw new NetgenMeshingException(errorCode);
+            }
 
             try
             {
-                int outNV = NetgenNative.NGW_GetNumPoints(resultHandle);
-                int outNE = NetgenNative.NGW_GetNumTets(resultHandle);
+                int outNV  = NetgenNative.NGW_GetNumPoints(resultHandle);
+                int outNE  = NetgenNative.NGW_GetNumTets(resultHandle);
+                int outNPE = NetgenNative.NGW_GetNodesPerElement(resultHandle);
 
                 if (outNV == 0 || outNE == 0)
-                    return null;
+                    throw new NetgenMeshingException(NetgenErrorCode.VolumeMeshFailed,
+                        "The netgen kernel returned an empty mesh.");
 
                 double[] outVertices = new double[outNV * 3];
-                int[]    outTets     = new int[outNE * 4];
+                int[]    outTets     = new int[outNE * outNPE];
 
                 NetgenNative.NGW_GetPoints(resultHandle, outVertices);
                 NetgenNative.NGW_GetTets(resultHandle, outTets);
 
-                var result = new TetrahedralMesh(outVertices, outTets);
+                var result = new TetrahedralMesh(outVertices, outTets, outNPE);
 
-                // Post-generation Laplacian smoothing (optional)
-                if (meshingParams.LaplacianSmoothingIterations > 0)
+                // Post-generation Laplacian smoothing (TET4 only)
+                if (meshingParams.LaplacianSmoothingIterations > 0
+                    && result.NodesPerElement == 4)
                     result = result.CreateSmoothed(
                         meshingParams.LaplacianSmoothingIterations,
                         meshingParams.LaplacianSmoothingFactor);

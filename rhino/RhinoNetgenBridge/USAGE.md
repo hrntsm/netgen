@@ -13,7 +13,12 @@ netgen メッシュカーネルを使って Rhino の **Brep から四面体メ�
 5. [スムージング](#5-スムージング)
 6. [要素品質の評価](#6-要素品質の評価)
 7. [結果の取得・利用](#7-結果の取得利用)
-8. [パラメータ一覧](#8-パラメータ一覧)
+8. [進捗コールバック](#8-進捗コールバック)
+9. [二次要素（TET10）](#9-二次要素tet10)
+10. [一様細分化](#10-一様細分化)
+11. [複数 Brep のアセンブリ](#11-複数-brep-のアセンブリ)
+12. [エラーハンドリング](#12-エラーハンドリング)
+13. [パラメータ一覧](#13-パラメータ一覧)
 
 ---
 
@@ -77,16 +82,17 @@ NetgenMesher.Initialize();
 Brep brep = /* Rhino から取得 */;
 
 // デフォルトパラメータで生成
-TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep);
-
-if (tet == null)
+// 失敗時は NetgenMeshingException がスローされます
+try
 {
-    RhinoApp.WriteLine("メッシュ生成に失敗しました。Brep が閉じているか確認してください。");
-    return;
+    TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep);
+    RhinoApp.WriteLine($"頂点数: {tet.VertexCount}");
+    RhinoApp.WriteLine($"四面体数: {tet.TetCount}");
 }
-
-RhinoApp.WriteLine($"頂点数: {tet.VertexCount}");
-RhinoApp.WriteLine($"四面体数: {tet.TetCount}");
+catch (NetgenMeshingException ex)
+{
+    RhinoApp.WriteLine($"メッシュ生成に失敗しました: {ex.ErrorCode} – {ex.Message}");
+}
 ```
 
 ### プリセットを使う
@@ -444,7 +450,194 @@ doc.Views.Redraw();
 
 ---
 
-## 8. パラメータ一覧
+## 8. 進捗コールバック
+
+メッシュ生成の各ステージでコールバックを受け取り、進捗を表示できます。
+
+```csharp
+var mp = MeshingParameters.Fine();
+
+// Action<string, int> で受け取る (ステージ名, 進捗%)
+Action<string, int> progress = (stage, percent) =>
+{
+    RhinoApp.WriteLine($"[{percent,3}%] {stage}");
+    // UI スレッドへの通知や Rhino のプログレスバー更新もここで行う
+};
+
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(
+    brep, mp,
+    onProgress: progress);
+```
+
+#### コールバックで受け取るステージ一覧
+
+| ステージ名 | 進捗 % | 処理内容 |
+|---|---|---|
+| `"edges"` | 10 | エッジ生成開始 |
+| `"surface"` | 35 | 表面メッシュ生成開始 |
+| `"volume"` | 60 | 体積メッシュ生成開始 |
+| `"second_order"` | 75 | 二次要素生成（`SecondOrder=true` 時のみ） |
+| `"refinement"` | 80 | 一様細分化（`UniformRefinementSteps>0` 時のみ） |
+| `"extract"` | 90 | 結果の抽出 |
+| `"done"` | 100 | 完了 |
+
+> **注意:** コールバックは `GenerateFromBrep` / `GenerateFromMesh` を呼んだスレッドから呼ばれます。
+> コールバック内で NGW_* 関数を呼び出さないでください。
+
+---
+
+## 9. 二次要素（TET10）
+
+`SecondOrder = true` を指定すると、各辺の中点ノードを含む **10 ノード四面体（TET10）** が生成されます。
+FEM の二次精度解析が必要な場合に使用します。
+
+```csharp
+var mp = MeshingParameters.Medium();
+mp.SecondOrder = true;   // TET10 を生成
+
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+
+// 要素タイプを確認
+RhinoApp.WriteLine($"ノード/要素: {tet.NodesPerElement}");  // → 10
+RhinoApp.WriteLine($"四面体数:   {tet.TetCount}");
+
+// 全ノードを取得（コーナーノード 0–3 + 辺中点ノード 4–9）
+int[] allNodes = tet.GetTetrahedronAllNodes(0);
+
+// コーナーノードのみ（GetTetrahedron は TET10 でも使える）
+var (a, b, c, d) = tet.GetTetrahedron(0);
+```
+
+#### TET4 と TET10 の比較
+
+| 項目 | TET4（デフォルト） | TET10（SecondOrder） |
+|---|---|---|
+| ノード数/要素 | 4 | 10 |
+| FEM 精度 | 1次 | 2次 |
+| メモリ使用量 | 基準 | 約2倍 |
+| ラプラシアンスムージング | 対応 | **非対応**（`CreateSmoothed` は例外） |
+
+> **制約:** `SecondOrder = true` のメッシュには `CreateSmoothed()` を呼べません。
+> スムージングが必要な場合は TET4 で生成してから `CreateSmoothed()` を適用してください。
+
+---
+
+## 10. 一様細分化
+
+`UniformRefinementSteps` を指定すると、体積メッシュ生成後に**一様細分化**を N 回繰り返します。
+1 回の細分化で各四面体は 8 つの子四面体に分割されます。
+
+```csharp
+var mp = MeshingParameters.Coarse();  // まず粗いメッシュを生成
+mp.UniformRefinementSteps = 1;        // 1 回細分化（要素数 ×8）
+
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+RhinoApp.WriteLine($"四面体数: {tet.TetCount}");
+```
+
+> **注意:** 1 回の細分化で要素数が約 8 倍になります。`UniformRefinementSteps = 2` 以上は
+> 大規模メッシュになる可能性があるため慎重に使用してください。
+
+#### プリセットとの組み合わせ例
+
+```csharp
+// 粗いメッシュを生成してから細分化 → Fine と同等の要素サイズを得る
+var mp = MeshingParameters.Coarse();
+mp.UniformRefinementSteps = 1;
+
+// 位相的に均一な分割が必要な FEM 解析向け
+var mp2 = MeshingParameters.Medium();
+mp2.UniformRefinementSteps = 1;
+mp2.EnableVolumeOptimization = false;  // 細分化後は最適化不要な場合
+```
+
+---
+
+## 11. 複数 Brep のアセンブリ
+
+複数の閉じた Brep を結合して一つの四面体メッシュを生成できます。
+BooleanUnion 済みのソリッドや、複数パーツからなるアセンブリに適しています。
+
+```csharp
+// 複数の Brep を用意
+Brep[] breps = new[] { box, sphere, cylinder };
+
+var mp = MeshingParameters.Medium();
+
+// まとめて一つの四面体メッシュを生成
+TetrahedralMesh tet = NetgenMesher.GenerateFromBreps(breps, mp);
+
+RhinoApp.WriteLine($"頂点数:   {tet.VertexCount}");
+RhinoApp.WriteLine($"四面体数: {tet.TetCount}");
+```
+
+> **推奨:** 最良の結果を得るには、Brep を事前に `Brep.CreateBooleanUnion()` で結合し、
+> 単一の閉じたソリッドにしてから渡すことを推奨します。
+> 重複または開いた Brep はメッシュ生成に失敗する場合があります。
+
+ローカルサイズ制約や進捗コールバックも `GenerateFromBrep` と同様に使えます：
+
+```csharp
+TetrahedralMesh tet = NetgenMesher.GenerateFromBreps(
+    breps, mp,
+    pointRestrictions: pointRestrictions,
+    boxRestrictions:   boxRestrictions,
+    onProgress:        (stage, pct) => RhinoApp.WriteLine($"[{pct}%] {stage}"));
+```
+
+---
+
+## 12. エラーハンドリング
+
+メッシュ生成に失敗した場合、`NetgenMeshingException` がスローされます。
+
+```csharp
+try
+{
+    TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+    // 成功時の処理
+}
+catch (NetgenMeshingException ex)
+{
+    // エラーコードで原因を判別
+    switch (ex.ErrorCode)
+    {
+        case NetgenErrorCode.InvalidInput:
+            RhinoApp.WriteLine("入力エラー: Brep が閉じているか確認してください。");
+            break;
+        case NetgenErrorCode.StlInitFailed:
+            RhinoApp.WriteLine("STL 初期化失敗: サーフェスメッシュが不正な可能性があります。");
+            break;
+        case NetgenErrorCode.EdgeGenerationFailed:
+            RhinoApp.WriteLine("エッジ生成失敗: 形状が複雑すぎるか、メッシュパラメータを確認してください。");
+            break;
+        case NetgenErrorCode.SurfaceMeshFailed:
+            RhinoApp.WriteLine("表面メッシュ生成失敗: パラメータを緩めてみてください。");
+            break;
+        case NetgenErrorCode.VolumeMeshFailed:
+            RhinoApp.WriteLine("体積メッシュ生成失敗: 表面が閉じているか確認してください。");
+            break;
+        default:
+            RhinoApp.WriteLine($"不明なエラー: {ex.Message}");
+            break;
+    }
+}
+```
+
+#### NetgenErrorCode 一覧
+
+| コード | 説明 | 対処法 |
+|---|---|---|
+| `Ok` | 成功 | – |
+| `InvalidInput` | 無効な入力（null、空メッシュ等） | Brep が閉じていること・null でないことを確認 |
+| `StlInitFailed` | STL ジオメトリ初期化失敗 | 表面メッシュが縮退・非多様体でないか確認 |
+| `EdgeGenerationFailed` | エッジ生成失敗 | `ElementsPerEdge` や `Fineness` を変更 |
+| `SurfaceMeshFailed` | 表面メッシュ生成失敗 | パラメータを緩める（`MaxElementSize` を大きく等） |
+| `VolumeMeshFailed` | 体積メッシュ生成失敗 | 表面が完全に閉じているか確認 |
+
+---
+
+## 13. パラメータ一覧
 
 ### MeshingParameters
 
@@ -466,6 +659,8 @@ doc.Views.Redraw();
 | `OptimizationSteps3D` | `int` | `3` | 体積最適化ステップ数 |
 | `LaplacianSmoothingIterations` | `int` | `0` | ラプラシアンスムージング繰り返し数 |
 | `LaplacianSmoothingFactor` | `double` | `0.5` | スムージング移動量 λ `(0, 1]` |
+| `SecondOrder` | `bool` | `false` | TET10 二次要素を生成 |
+| `UniformRefinementSteps` | `int` | `0` | 一様細分化の繰り返し数 |
 
 ### NetgenMesher のメソッド
 
@@ -473,8 +668,9 @@ doc.Views.Redraw();
 |---|---|
 | `Initialize()` | netgen カーネルを初期化（アプリ起動時に一度） |
 | `Shutdown()` | netgen カーネルを終了（アプリ終了時） |
-| `GenerateFromBrep(brep, mp, rhinoMp, pointRestrictions, boxRestrictions)` | Brep から四面体メッシュを生成 |
-| `GenerateFromMesh(mesh, mp, pointRestrictions, boxRestrictions)` | 閉じた Mesh から四面体メッシュを生成 |
+| `GenerateFromBrep(brep, mp, rhinoMp, pointRestrictions, boxRestrictions, onProgress)` | Brep から四面体メッシュを生成 |
+| `GenerateFromBreps(breps, mp, rhinoMp, pointRestrictions, boxRestrictions, onProgress)` | 複数 Brep から四面体メッシュを生成 |
+| `GenerateFromMesh(mesh, mp, pointRestrictions, boxRestrictions, onProgress)` | 閉じた Mesh から四面体メッシュを生成 |
 
 ### TetrahedralMesh のメソッド
 
@@ -482,12 +678,14 @@ doc.Views.Redraw();
 |---|---|
 | `VertexCount` | 頂点数 |
 | `TetCount` | 四面体要素数 |
+| `NodesPerElement` | ノード数/要素（TET4=4, TET10=10） |
 | `Vertices` | 頂点座標フラット配列 `[x,y,z, …]` |
-| `Tetrahedra` | 四面体インデックスフラット配列 `[a,b,c,d, …]` (0-based) |
+| `Tetrahedra` | 要素ノードインデックスフラット配列（0-based） |
 | `GetVertex(index)` | 指定頂点を `Point3d` で取得 |
-| `GetTetrahedron(index)` | 指定四面体の頂点インデックスを取得 |
+| `GetTetrahedron(index)` | 指定四面体のコーナーノードインデックスを取得（TET4/TET10 共通） |
+| `GetTetrahedronAllNodes(index)` | 全ノードインデックスを取得（TET10 では 10 個） |
 | `ToRhinoSurfaceMesh()` | 外表面を Rhino `Mesh` に変換 |
-| `CreateSmoothed(iterations, factor)` | ラプラシアンスムージングを適用した新しいメッシュを返す |
+| `CreateSmoothed(iterations, factor)` | ラプラシアンスムージングを適用した新しいメッシュを返す（TET4 のみ） |
 | `ComputeElementQuality(index)` | 指定要素の `TetQuality` を返す |
 | `ComputeAllElementQualities()` | 全要素の `TetQuality[]` を返す |
 | `ComputeQualityStatistics()` | メッシュ全体の `MeshQualityStatistics` を返す |

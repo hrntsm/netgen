@@ -16,6 +16,19 @@ namespace RhinoNetgenBridge
         private const string LibName = "netgen_wrapper";
 
         // ---------------------------------------------------------------
+        // Progress callback delegate
+        // ---------------------------------------------------------------
+
+        /// <summary>
+        /// Unmanaged function pointer type for the progress callback.
+        /// Matches <c>NGW_ProgressCallback</c> in netgen_wrapper.h.
+        /// </summary>
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        internal delegate void ProgressCallbackDelegate(
+            [MarshalAs(UnmanagedType.LPStr)] string stage,
+            int percent);
+
+        // ---------------------------------------------------------------
         // Blittable structs – must match netgen_wrapper.h exactly.
         // Fields are ordered (all doubles, then all ints) to avoid padding.
         // ---------------------------------------------------------------
@@ -52,6 +65,8 @@ namespace RhinoNetgenBridge
             public int OptSteps3D;
             public int OptSurfMeshEnable;
             public int OptVolMeshEnable;
+            public int SecondOrder;       // 0=TET4, 1=TET10
+            public int UniformRefSteps;   // uniform refinement passes
         }
 
         /// <summary>Mirror of <c>NGW_PointSizeRestriction</c>.</summary>
@@ -76,6 +91,19 @@ namespace RhinoNetgenBridge
             public double ZMax;
             public double H;
         }
+
+        // ---------------------------------------------------------------
+        // Progress callback and error reporting
+        // ---------------------------------------------------------------
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void NGW_SetProgressCallback(ProgressCallbackDelegate callback);
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void NGW_ClearProgressCallback();
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int NGW_GetLastError();
 
         // ---------------------------------------------------------------
         // Library lifecycle
@@ -129,6 +157,9 @@ namespace RhinoNetgenBridge
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern int NGW_GetNumTets(IntPtr result);
+
+        [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int NGW_GetNodesPerElement(IntPtr result);
 
         [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void NGW_GetPoints(IntPtr result, [Out] double[] outVertices);
