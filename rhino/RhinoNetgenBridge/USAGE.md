@@ -18,7 +18,9 @@ netgen メッシュカーネルを使って Rhino の **Brep から四面体メ�
 10. [一様細分化](#10-一様細分化)
 11. [複数 Brep のアセンブリ](#11-複数-brep-のアセンブリ)
 12. [エラーハンドリング](#12-エラーハンドリング)
-13. [パラメータ一覧](#13-パラメータ一覧)
+13. [入力メッシュの検証](#13-入力メッシュの検証)
+14. [FEM フォーマットへのエクスポート](#14-fem-フォーマットへのエクスポート)
+15. [パラメータ一覧](#15-パラメータ一覧)
 
 ---
 
@@ -637,7 +639,172 @@ catch (NetgenMeshingException ex)
 
 ---
 
-## 13. パラメータ一覧
+## 13. 入力メッシュの検証
+
+netgen に渡す前にサーフェスメッシュを検査し、問題があれば具体的な情報を返します。
+メッシュ生成に失敗する前に原因を特定できます。
+
+### 基本的な使い方
+
+```csharp
+using RhinoNetgenBridge;
+using Rhino.Geometry;
+
+Mesh surfaceMesh = /* Rhino から取得した閉じたメッシュ */;
+
+MeshValidationResult result = MeshValidator.Validate(surfaceMesh);
+
+if (!result.IsValid)
+{
+    RhinoApp.WriteLine($"検証失敗: {result}");
+    // 問題の詳細を表示（最大 200 件）
+    foreach (MeshIssue issue in result.Issues)
+        RhinoApp.WriteLine($"  {issue}");
+    return;
+}
+
+// 検証が通ったら安全にメッシュ生成
+TetrahedralMesh tet = NetgenMesher.GenerateFromMesh(surfaceMesh, mp);
+```
+
+### 検証結果の詳細
+
+```csharp
+MeshValidationResult result = MeshValidator.Validate(surfaceMesh);
+
+// クイックフラグ
+bool isClosed   = result.IsClosed;    // 裸のエッジがないか
+bool isManifold = result.IsManifold;  // 非多様体エッジがないか
+bool isValid    = result.IsValid;     // FEM に適しているか
+
+// カウント
+RhinoApp.WriteLine($"裸のエッジ数:     {result.NakedEdgeCount}");
+RhinoApp.WriteLine($"非多様体エッジ数: {result.NonManifoldEdgeCount}");
+RhinoApp.WriteLine($"縮退面数:         {result.DegenerateFaceCount}");
+RhinoApp.WriteLine($"未使用頂点数:     {result.UnusedVertexCount}");
+```
+
+### 検出される問題の種類
+
+| `MeshIssueType` | 原因 | FEM への影響 |
+|---|---|---|
+| `NakedEdge` | エッジが 1 つの面しか持たない（開いたメッシュ） | **致命的** – netgen は閉じたメッシュが必要 |
+| `NonManifoldEdge` | エッジが 3 枚以上の面で共有 | **致命的** – 非多様体では体積メッシュを切れない |
+| `DegenerateFace` | ゼロ面積の三角形 | **重大** – STL 初期化失敗の原因になる |
+| `UnusedVertex` | どの面にも属しない頂点 | 軽微 – メッシュ生成には影響しない |
+
+### Brep 検証との組み合わせ例
+
+```csharp
+// Brep をテッセレーションして検証してから生成する完全な例
+var rhinoMp = Rhino.Geometry.MeshingParameters.Smooth;
+Mesh[] faceMeshes = Mesh.CreateFromBrep(brep, rhinoMp);
+var combined = new Mesh();
+foreach (var m in faceMeshes) combined.Append(m);
+combined.Faces.ConvertQuadsToTriangles();
+combined.Vertices.CombineIdentical(true, true);
+combined.Weld(Math.PI);
+combined.Compact();
+
+MeshValidationResult validation = MeshValidator.Validate(combined);
+if (!validation.IsValid)
+{
+    // 裸のエッジがある場合は Rhino の FillHoles コマンドで修復を試みる
+    if (validation.NakedEdgeCount > 0)
+        RhinoApp.WriteLine($"裸のエッジが {validation.NakedEdgeCount} 本あります。Brep を修復してください。");
+    return;
+}
+
+TetrahedralMesh tet = NetgenMesher.GenerateFromMesh(combined, mp);
+```
+
+---
+
+## 14. FEM フォーマットへのエクスポート
+
+生成した四面体メッシュを主要な FEM ソルバー向けフォーマットで出力できます。
+TET4（線形）と TET10（二次）の両方に対応しています。
+
+### 対応フォーマット
+
+| メソッド | 拡張子 | 対象ソルバー |
+|---|---|---|
+| `WriteAbaqus` | `.inp` | Abaqus, CalculiX |
+| `WriteVtk` | `.vtu` | ParaView, OpenFOAM |
+| `WriteGmsh` | `.msh` | Gmsh, FEniCS, Elmer |
+| `WriteNastran` | `.bdf` | NASTRAN, MSC Nastran |
+
+### 基本的な使い方
+
+```csharp
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+
+// お好みのフォーマットでエクスポート
+MeshExporter.WriteAbaqus (tet, "model.inp");
+MeshExporter.WriteVtk    (tet, "model.vtu");
+MeshExporter.WriteGmsh   (tet, "model.msh");
+MeshExporter.WriteNastran(tet, "model.bdf");
+```
+
+### Abaqus .inp
+
+```csharp
+// TET4 → *Element, type=C3D4
+// TET10 → *Element, type=C3D10
+MeshExporter.WriteAbaqus(tet, "model.inp");
+
+// パーツ名を指定する場合
+MeshExporter.WriteAbaqus(tet, "model.inp", partName: "MyPart");
+```
+
+出力されるファイルには `*Heading`、`*Node`、`*Element`、`*Nset/Elset` セクションが含まれます。
+境界条件や荷重ステップは手動で追記してください。
+
+### VTK XML .vtu
+
+```csharp
+// TET4 → VTK_TETRA (type 10)
+// TET10 → VTK_QUADRATIC_TETRA (type 24)
+MeshExporter.WriteVtk(tet, "model.vtu");
+```
+
+出力ファイルは ParaView で直接開けます。OpenFOAM の場合は `foamMeshToTetgen` などで変換してください。
+
+### Gmsh .msh v2
+
+```csharp
+// TET4 → Gmsh element type 4
+// TET10 → Gmsh element type 11
+MeshExporter.WriteGmsh(tet, "model.msh");
+```
+
+PhysicalGroup `1` に全要素が登録されます。Gmsh で開いて境界条件を追加できます。
+
+### NASTRAN .bdf
+
+```csharp
+// TET4 / TET10 → CTETRA カード
+MeshExporter.WriteNastran(tet, "model.bdf");
+```
+
+PSOLID/MAT1 カードがプレースホルダとして出力されます。
+材料定数は実際の解析に合わせて編集してください。
+
+### TET10 メッシュのエクスポート例
+
+```csharp
+var mp = MeshingParameters.Fine();
+mp.SecondOrder = true;  // TET10 を生成
+
+TetrahedralMesh tet = NetgenMesher.GenerateFromBrep(brep, mp);
+
+// TET10 として Abaqus にエクスポート（C3D10 要素）
+MeshExporter.WriteAbaqus(tet, "model_quadratic.inp");
+```
+
+---
+
+## 15. パラメータ一覧
 
 ### MeshingParameters
 
@@ -714,3 +881,31 @@ catch (NetgenMeshingException ex)
 | `MinVolume` / `MaxVolume` / `TotalVolume` | 体積の最小・最大・合計 |
 | `TotalElements` | 全要素数 |
 | `InvertedElements` | 反転要素数 |
+
+### MeshValidator のメソッド
+
+| メソッド | 説明 |
+|---|---|
+| `Validate(mesh)` | サーフェスメッシュを検証して `MeshValidationResult` を返す |
+
+### MeshValidationResult のプロパティ
+
+| プロパティ | 説明 |
+|---|---|
+| `IsValid` | 致命的な問題がなければ `true` |
+| `IsClosed` | 裸のエッジがなければ `true` |
+| `IsManifold` | 非多様体エッジがなければ `true` |
+| `NakedEdgeCount` | 裸のエッジ数 |
+| `NonManifoldEdgeCount` | 非多様体エッジ数 |
+| `DegenerateFaceCount` | 縮退面数 |
+| `UnusedVertexCount` | 未使用頂点数 |
+| `Issues` | `IReadOnlyList<MeshIssue>` – 最大 200 件の問題リスト |
+
+### MeshExporter のメソッド
+
+| メソッド | 説明 |
+|---|---|
+| `WriteAbaqus(mesh, path, partName)` | Abaqus .inp（C3D4 / C3D10）を書き出す |
+| `WriteVtk(mesh, path)` | VTK XML .vtu を書き出す |
+| `WriteGmsh(mesh, path)` | Gmsh MSH v2 .msh を書き出す |
+| `WriteNastran(mesh, path)` | NASTRAN 自由形式 .bdf を書き出す |

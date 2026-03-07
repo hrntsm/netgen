@@ -46,6 +46,8 @@
     <Compile Include="MeshQuality.cs" />
     <Compile Include="TetrahedralMesh.cs" />
     <Compile Include="NetgenException.cs" />
+    <Compile Include="MeshValidator.cs" />
+    <Compile Include="MeshExporter.cs" />
     <Compile Include="NetgenMesher.cs" />
   </ItemGroup>
 
