@@ -61,8 +61,7 @@ namespace RhinoNetgenBridge
         public static void WriteAbaqus(TetrahedralMesh mesh, string path,
                                         string partName = "Part-1")
         {
-            if (mesh == null)  throw new ArgumentNullException(nameof(mesh));
-            if (path  == null) throw new ArgumentNullException(nameof(path));
+            ValidateArgs(mesh, path);
 
             string elementType = mesh.NodesPerElement == 10 ? "C3D10" : "C3D4";
 
@@ -88,15 +87,16 @@ namespace RhinoNetgenBridge
             sw.WriteLine($"*Element, type={elementType}");
             int ne  = mesh.TetCount;
             int npe = mesh.NodesPerElement;
+            var sb  = new StringBuilder();
             for (int i = 0; i < ne; ++i)
             {
-                int[] nodes = mesh.GetTetrahedronAllNodes(i);
-                var sb = new StringBuilder();
+                sb.Clear();
                 sb.Append(i + 1);
-                foreach (int n in nodes)
+                int base_ = i * npe;
+                for (int k = 0; k < npe; ++k)
                 {
                     sb.Append(", ");
-                    sb.Append(n + 1);
+                    sb.Append(mesh.Tetrahedra[base_ + k] + 1);
                 }
                 sw.WriteLine(sb);
             }
@@ -130,8 +130,7 @@ namespace RhinoNetgenBridge
         /// <param name="path">Output file path (e.g. "model.vtu").</param>
         public static void WriteVtk(TetrahedralMesh mesh, string path)
         {
-            if (mesh == null)  throw new ArgumentNullException(nameof(mesh));
-            if (path  == null) throw new ArgumentNullException(nameof(path));
+            ValidateArgs(mesh, path);
 
             int nv     = mesh.VertexCount;
             int ne     = mesh.TetCount;
@@ -168,12 +167,12 @@ namespace RhinoNetgenBridge
                          + "Name=\"connectivity\" format=\"ascii\">");
             for (int i = 0; i < ne; ++i)
             {
-                int[] nodes = mesh.GetTetrahedronAllNodes(i);
+                int base_ = i * npe;
                 sw.Write("          ");
                 for (int k = 0; k < npe; ++k)
                 {
                     if (k > 0) sw.Write(' ');
-                    sw.Write(nodes[k]);
+                    sw.Write(mesh.Tetrahedra[base_ + k]);
                 }
                 sw.WriteLine();
             }
@@ -222,8 +221,7 @@ namespace RhinoNetgenBridge
         /// <param name="path">Output file path (e.g. "model.msh").</param>
         public static void WriteGmsh(TetrahedralMesh mesh, string path)
         {
-            if (mesh == null)  throw new ArgumentNullException(nameof(mesh));
-            if (path  == null) throw new ArgumentNullException(nameof(path));
+            ValidateArgs(mesh, path);
 
             int nv    = mesh.VertexCount;
             int ne    = mesh.TetCount;
@@ -258,18 +256,19 @@ namespace RhinoNetgenBridge
             // We use 2 tags: physical group = 1, elementary entity = 1.
             sw.WriteLine("$Elements");
             sw.WriteLine(ne);
+            var sb = new StringBuilder();
             for (int i = 0; i < ne; ++i)
             {
-                int[] nodes = mesh.GetTetrahedronAllNodes(i);
-                var sb = new StringBuilder();
+                sb.Clear();
                 sb.Append(i + 1);
                 sb.Append(' ');
                 sb.Append(gmshType);
                 sb.Append(" 2 1 1");
-                foreach (int n in nodes)
+                int base_ = i * npe;
+                for (int k = 0; k < npe; ++k)
                 {
                     sb.Append(' ');
-                    sb.Append(n + 1);
+                    sb.Append(mesh.Tetrahedra[base_ + k] + 1);
                 }
                 sw.WriteLine(sb);
             }
@@ -298,8 +297,7 @@ namespace RhinoNetgenBridge
         /// <param name="path">Output file path (e.g. "model.bdf").</param>
         public static void WriteNastran(TetrahedralMesh mesh, string path)
         {
-            if (mesh == null)  throw new ArgumentNullException(nameof(mesh));
-            if (path  == null) throw new ArgumentNullException(nameof(path));
+            ValidateArgs(mesh, path);
 
             int nv  = mesh.VertexCount;
             int ne  = mesh.TetCount;
@@ -331,14 +329,16 @@ namespace RhinoNetgenBridge
             sw.WriteLine("$");
 
             // CTETRA cards (1-based)
+            int[] tets = mesh.Tetrahedra;
             for (int i = 0; i < ne; ++i)
             {
-                int[] n = mesh.GetTetrahedronAllNodes(i);
+                int b = i * npe;
                 if (npe == 4)
                 {
                     // CTETRA,EID,PID,G1,G2,G3,G4
                     sw.WriteLine(
-                        $"CTETRA,{i + 1},1,{n[0]+1},{n[1]+1},{n[2]+1},{n[3]+1}");
+                        $"CTETRA,{i + 1},1," +
+                        $"{tets[b]+1},{tets[b+1]+1},{tets[b+2]+1},{tets[b+3]+1}");
                 }
                 else // TET10
                 {
@@ -346,10 +346,10 @@ namespace RhinoNetgenBridge
                     //        +,G7,G8,G9,G10
                     sw.WriteLine(
                         $"CTETRA,{i + 1},1," +
-                        $"{n[0]+1},{n[1]+1},{n[2]+1},{n[3]+1}," +
-                        $"{n[4]+1},{n[5]+1},+");
+                        $"{tets[b]+1},{tets[b+1]+1},{tets[b+2]+1},{tets[b+3]+1}," +
+                        $"{tets[b+4]+1},{tets[b+5]+1},+");
                     sw.WriteLine(
-                        $"+,{n[6]+1},{n[7]+1},{n[8]+1},{n[9]+1}");
+                        $"+,{tets[b+6]+1},{tets[b+7]+1},{tets[b+8]+1},{tets[b+9]+1}");
                 }
             }
 
@@ -360,6 +360,12 @@ namespace RhinoNetgenBridge
         // ---------------------------------------------------------------
         // Private helpers
         // ---------------------------------------------------------------
+
+        private static void ValidateArgs(TetrahedralMesh mesh, string path)
+        {
+            if (mesh == null) throw new ArgumentNullException(nameof(mesh));
+            if (path == null) throw new ArgumentNullException(nameof(path));
+        }
 
         /// Format a double with enough precision for FEM coordinates.
         private static string F(double v) =>

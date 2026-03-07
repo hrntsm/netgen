@@ -126,8 +126,7 @@ namespace RhinoNetgenBridge
         public override string ToString()
         {
             if (IsValid)
-                return $"Valid  (faces={Issues.Count == 0}, " +
-                       $"unusedVerts={UnusedVertexCount})";
+                return $"Valid (unusedVerts={UnusedVertexCount})";
 
             return $"Invalid – nakedEdges={NakedEdgeCount}  " +
                    $"nonManifold={NonManifoldEdgeCount}  " +
@@ -154,11 +153,8 @@ namespace RhinoNetgenBridge
     /// </summary>
     public static class MeshValidator
     {
-        // Maximum edge length squared that still counts as "degenerate".
         private const double DegenerateAreaThreshold = 1e-20;
-
-        // Maximum squared distance for two vertices to be considered identical.
-        private const double DuplicateVertexThresholdSq = 1e-12;
+        private const int    MaxIssueListSize         = 200;
 
         /// <summary>
         /// Validate a surface mesh for suitability as tetrahedral mesh input.
@@ -182,9 +178,18 @@ namespace RhinoNetgenBridge
         {
             if (mesh == null) throw new ArgumentNullException(nameof(mesh));
 
-            // Work on a triangulated copy so quad handling is uniform.
-            Mesh tri = mesh.DuplicateMesh();
-            tri.Faces.ConvertQuadsToTriangles();
+            // Triangulate quads if needed; avoid copying when the mesh is already
+            // all-triangles to save memory and time.
+            Mesh tri;
+            if (mesh.Faces.QuadCount > 0)
+            {
+                tri = mesh.DuplicateMesh();
+                tri.Faces.ConvertQuadsToTriangles();
+            }
+            else
+            {
+                tri = mesh;
+            }
 
             int nv = tri.Vertices.Count;
             int nf = tri.Faces.Count;
@@ -215,7 +220,7 @@ namespace RhinoNetgenBridge
                 if (areaSq < DegenerateAreaThreshold)
                 {
                     degenerateFaces++;
-                    if (issues.Count < 200)
+                    if (issues.Count < MaxIssueListSize)
                         issues.Add(new MeshIssue(MeshIssueType.DegenerateFace,
                             $"Face {i} has zero or near-zero area.", i));
                 }
@@ -240,7 +245,7 @@ namespace RhinoNetgenBridge
                 if (kv.Value == 1)
                 {
                     nakedEdges++;
-                    if (issues.Count < 200)
+                    if (issues.Count < MaxIssueListSize)
                     {
                         var (a, b) = DecodeEdge(kv.Key);
                         issues.Add(new MeshIssue(MeshIssueType.NakedEdge,
@@ -250,7 +255,7 @@ namespace RhinoNetgenBridge
                 else if (kv.Value >= 3)
                 {
                     nonManifoldEdges++;
-                    if (issues.Count < 200)
+                    if (issues.Count < MaxIssueListSize)
                     {
                         var (a, b) = DecodeEdge(kv.Key);
                         issues.Add(new MeshIssue(MeshIssueType.NonManifoldEdge,
@@ -275,14 +280,14 @@ namespace RhinoNetgenBridge
                 if (!referenced[i])
                 {
                     unusedVertices++;
-                    if (issues.Count < 200)
+                    if (issues.Count < MaxIssueListSize)
                         issues.Add(new MeshIssue(MeshIssueType.UnusedVertex,
                             $"Vertex {i} is not referenced by any face.", i));
                 }
             }
 
             // Truncation notice
-            if (nakedEdges + nonManifoldEdges + degenerateFaces + unusedVertices > 200)
+            if (nakedEdges + nonManifoldEdges + degenerateFaces + unusedVertices > MaxIssueListSize)
                 issues.Add(new MeshIssue(MeshIssueType.NakedEdge,
                     "Issue list truncated at 200 entries. See counts for totals."));
 
@@ -299,8 +304,7 @@ namespace RhinoNetgenBridge
         private static void AddEdge(Dictionary<long, int> map, int a, int b)
         {
             long key = EncodeEdge(a, b);
-            map.TryGetValue(key, out int count);
-            map[key] = count + 1;
+            map[key] = map.TryGetValue(key, out int count) ? count + 1 : 1;
         }
 
         private static long EncodeEdge(int a, int b)
