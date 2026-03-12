@@ -475,7 +475,7 @@ namespace ngcore
 
   void Flags :: DoArchive(Archive & archive)
   {
-    archive & strflags & numflags & defflags & numlistflags & strlistflags & flaglistflags & anyflags;
+    archive & strflags & numflags & defflags & numlistflags & strlistflags & flaglistflags;
   }
 
   void Flags :: Update(const Flags& other)
