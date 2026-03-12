@@ -4,7 +4,7 @@
     <!-- Target .NET Framework 4.8 to match Rhino 7/8 on Windows, and
          net7.0 for Rhino 8 on macOS / cross-platform development.
          Adjust the TargetFramework(s) to match your Rhino version. -->
-    <TargetFrameworks>net48;net7.0</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <!-- Uncomment the line above to multi-target (.NET 4.8 + .NET 7):
     <TargetFrameworks>net48;net7.0</TargetFrameworks>
     -->
@@ -21,20 +21,16 @@
     <!-- Allow nullable reference types (C# 8+). Remove if targeting older SDK. -->
     <Nullable>enable</Nullable>
     <LangVersion>9.0</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
 
     <!-- Embed PDB for easier debugging -->
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 
-  <!-- -----------------------------------------------------------------------
-       RhinoCommon reference
-       Prefer the NuGet package during development so the project builds
-       without a full Rhino installation.  In a real Rhino plug-in project
-       this reference is typically provided by the Rhino plug-in SDK templates.
-       ----------------------------------------------------------------------- -->
-  <ItemGroup>
-    <PackageReference Include="RhinoCommon" Version="7.*" />
-  </ItemGroup>
+  <!-- RhinoCommon reference -->
+  <!-- Prefer the NuGet package during development so the project builds -->
+  <!-- without a full Rhino installation. In a real Rhino plug-in project -->
+  <!-- this reference is typically provided by the Rhino plug-in SDK templates. -->
 
   <!-- Test project can access internal types -->
   <ItemGroup>
@@ -43,9 +39,7 @@
     </AssemblyAttribute>
   </ItemGroup>
 
-  <!-- -----------------------------------------------------------------------
-       Source files
-       ----------------------------------------------------------------------- -->
+  <!-- Source files -->
   <ItemGroup>
     <Compile Include="NetgenNative.cs" />
     <Compile Include="MeshingParameters.cs" />
@@ -56,6 +50,9 @@
     <Compile Include="MeshValidator.cs" />
     <Compile Include="MeshExporter.cs" />
     <Compile Include="NetgenMesher.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="RhinoCommon" Version="8.26.25349.19001" />
   </ItemGroup>
 
 </Project>

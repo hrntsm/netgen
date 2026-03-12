@@ -1,0 +1,211 @@
+name: Build RhinoNetgenBridge Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/rhino-bridge-artifacts.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "libsrc/**"
+      - "ng/**"
+      - "nglib/**"
+      - "rhino/**"
+      - "windows/**"
+  pull_request:
+    paths:
+      - ".github/workflows/rhino-bridge-artifacts.yml"
+      - "CMakeLists.txt"
+      - "cmake/**"
+      - "libsrc/**"
+      - "ng/**"
+      - "nglib/**"
+      - "rhino/**"
+      - "windows/**"
+
+concurrency:
+  group: rhino-bridge-artifacts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.artifact_name }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_name: RhinoNetgenBridge-macos
+          - os: windows-latest
+            artifact_name: RhinoNetgenBridge-windows
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Configure and build macOS artifacts
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          detect_target_framework() {
+            local project_file="$1"
+            local target_framework
+            local frameworks
+
+            target_framework=$(sed -n 's:.*<TargetFramework>\([^<]*\)</TargetFramework>.*:\1:p' "$project_file" | head -n 1)
+            if [ -n "${target_framework:-}" ]; then
+              printf '%s\n' "$target_framework"
+              return 0
+            fi
+
+            frameworks=$(sed -n 's:.*<TargetFrameworks>\([^<]*\)</TargetFrameworks>.*:\1:p' "$project_file" | head -n 1)
+            if [ -z "${frameworks:-}" ]; then
+              return 1
+            fi
+
+            local old_ifs="$IFS"
+            IFS=';'
+            set -- $frameworks
+            IFS="$old_ifs"
+
+            for framework in "$@"; do
+              case "$framework" in
+                net[0-9]*.[0-9]*)
+                  printf '%s\n' "$framework"
+                  return 0
+                  ;;
+              esac
+            done
+
+            return 1
+          }
+
+          INSTALL_PREFIX="$GITHUB_WORKSPACE/ci-install-macos"
+          ARTIFACT_DIR="$GITHUB_WORKSPACE/artifacts/RhinoNetgenBridge-macos"
+          PROJECT_FILE="$GITHUB_WORKSPACE/rhino/RhinoNetgenBridge/RhinoNetgenBridge.csproj"
+          TARGET_FRAMEWORK=$(detect_target_framework "$PROJECT_FILE")
+          CS_OUTPUT_DIR="$GITHUB_WORKSPACE/rhino/RhinoNetgenBridge/bin/Release/$TARGET_FRAMEWORK"
+
+          cmake -S . -B build-nglib -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
+            -DUSE_SUPERBUILD=OFF \
+            -DUSE_GUI=OFF \
+            -DUSE_PYTHON=OFF \
+            -DUSE_OCC=OFF
+
+          cmake --build build-nglib --target nglib --parallel
+          cmake --install build-nglib --config Release
+
+          cmake -S rhino/NetgenWrapper -B rhino/NetgenWrapper/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DNGLIB_INCLUDE_DIR="$INSTALL_PREFIX/Contents/Resources/include" \
+            -DNGLIB_LIBRARY="$INSTALL_PREFIX/Contents/MacOS/libnglib.dylib"
+
+          cmake --build rhino/NetgenWrapper/build --parallel
+          dotnet build "$PROJECT_FILE" -c Release -f "$TARGET_FRAMEWORK"
+
+          rm -rf "$ARTIFACT_DIR"
+          mkdir -p "$ARTIFACT_DIR"
+
+          cp "$CS_OUTPUT_DIR/RhinoNetgenBridge.dll" "$ARTIFACT_DIR/"
+          if [ -f "$CS_OUTPUT_DIR/RhinoNetgenBridge.deps.json" ]; then
+            cp "$CS_OUTPUT_DIR/RhinoNetgenBridge.deps.json" "$ARTIFACT_DIR/"
+          fi
+          cp "$GITHUB_WORKSPACE/rhino/NetgenWrapper/build/libnetgen_wrapper.dylib" "$ARTIFACT_DIR/"
+          cp "$INSTALL_PREFIX/Contents/MacOS/libnglib.dylib" "$ARTIFACT_DIR/"
+          cp "$INSTALL_PREFIX/Contents/MacOS/libngcore.dylib" "$ARTIFACT_DIR/"
+          cp "$GITHUB_WORKSPACE/rhino/RhinoNetgenBridge/API.md" "$ARTIFACT_DIR/"
+
+          install_name_tool \
+            -change "@rpath/libnglib.dylib" "@loader_path/libnglib.dylib" \
+            "$ARTIFACT_DIR/libnetgen_wrapper.dylib"
+
+          install_name_tool \
+            -change "@rpath/libngcore.dylib" "@loader_path/libngcore.dylib" \
+            "$ARTIFACT_DIR/libnglib.dylib"
+
+      - name: Configure and build Windows artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Get-TargetFramework {
+            param([string]$ProjectFile)
+
+            [xml]$project = Get-Content -Path $ProjectFile
+            $targetFramework = $project.Project.PropertyGroup.TargetFramework | Select-Object -First 1
+            if ($targetFramework) {
+              return $targetFramework
+            }
+
+            $frameworks = $project.Project.PropertyGroup.TargetFrameworks | Select-Object -First 1
+            if (-not $frameworks) {
+              throw "Could not determine TargetFramework from $ProjectFile"
+            }
+
+            return ($frameworks -split ';' | Where-Object { $_ -match '^net\d+\.\d+$' } | Select-Object -First 1)
+          }
+
+          $installPrefix = Join-Path $env:GITHUB_WORKSPACE 'ci-install-windows'
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'artifacts\RhinoNetgenBridge-windows'
+          $projectFile = Join-Path $env:GITHUB_WORKSPACE 'rhino\RhinoNetgenBridge\RhinoNetgenBridge.csproj'
+          $targetFramework = Get-TargetFramework -ProjectFile $projectFile
+          $csOutputDir = Join-Path $env:GITHUB_WORKSPACE "rhino\RhinoNetgenBridge\bin\Release\$targetFramework"
+
+          cmake -S . -B build-super -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX="$installPrefix" `
+            -DBUILD_ZLIB=ON `
+            -DUSE_GUI=OFF `
+            -DUSE_PYTHON=OFF `
+            -DUSE_OCC=OFF
+
+          cmake --build build-super --target netgen --config Release --parallel
+          cmake --install build-super --config Release
+
+          cmake -S rhino/NetgenWrapper -B rhino/NetgenWrapper/build -G "Visual Studio 17 2022" -A x64 `
+            -DNGLIB_INCLUDE_DIR="$installPrefix\include" `
+            -DNGLIB_LIBRARY="$installPrefix\lib\nglib.lib"
+
+          cmake --build rhino/NetgenWrapper/build --config Release --parallel
+          dotnet build $projectFile -c Release -f $targetFramework
+
+          if (Test-Path $artifactDir) {
+            Remove-Item -Recurse -Force $artifactDir
+          }
+          New-Item -ItemType Directory -Path $artifactDir | Out-Null
+
+          $wrapperDll = Get-ChildItem -Path 'rhino/NetgenWrapper/build' -Recurse -Filter 'netgen_wrapper.dll' | Select-Object -First 1
+          if (-not $wrapperDll) {
+            throw "netgen_wrapper.dll was not found under rhino/NetgenWrapper/build"
+          }
+
+          Copy-Item "$csOutputDir\RhinoNetgenBridge.dll" $artifactDir
+          if (Test-Path "$csOutputDir\RhinoNetgenBridge.deps.json") {
+            Copy-Item "$csOutputDir\RhinoNetgenBridge.deps.json" $artifactDir
+          }
+          Copy-Item $wrapperDll.FullName $artifactDir
+          Copy-Item "$installPrefix\bin\nglib.dll" $artifactDir
+          Copy-Item "$installPrefix\bin\ngcore.dll" $artifactDir
+          Copy-Item "rhino\RhinoNetgenBridge\API.md" $artifactDir
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: artifacts/${{ matrix.artifact_name }}/
+          if-no-files-found: error

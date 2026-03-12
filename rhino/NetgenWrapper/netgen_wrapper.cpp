@@ -245,7 +245,7 @@ static void* generateMeshImpl(
     {
         fireProgress("refinement", 80);
         for (int r = 0; r < mp->uniform_ref_steps; ++r)
-            Ng_STL_Uniform_Refinement(stlGeom, mesh, &ngmp);
+            Ng_STL_Uniform_Refinement(stlGeom, mesh);
     }
 
     fireProgress("extract", 90);

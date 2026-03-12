@@ -9,3 +9,19 @@ __pycache__
 *.zip
 .cache
 *.patch
+.DS_Store
+
+# Local build/install outputs
+/.local/
+/build-nglib/
+/netgen_mesher-py3.egg-info
+
+# IDE-generated solution file
+/netgen.sln
+
+# .NET build outputs
+/rhino/*/bin/
+/rhino/*/obj/
+
+# Bundled native + managed output for C# consumption
+/rhino/NetgenWrapper/csbuild/

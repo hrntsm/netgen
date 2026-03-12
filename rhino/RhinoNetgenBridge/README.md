@@ -4,6 +4,8 @@ A .NET class library that wraps the `netgen_wrapper` native shared library,
 letting you generate **tetrahedral meshes** from Rhino `Brep` objects with a
 handful of lines of C#.
 
+For a consumer-oriented API guide based on the built artifacts, see [API.md](./API.md).
+
 ## Prerequisites
 
 | Component | Purpose |

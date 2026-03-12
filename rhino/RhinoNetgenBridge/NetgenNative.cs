@@ -144,9 +144,9 @@ namespace RhinoNetgenBridge
             [In] int[] triangles,
             ref NativeMeshingParams mp,
             int numPointRestrictions,
-            [In] NativePointRestriction[] pointRestrictions,
+            [In] NativePointRestriction[]? pointRestrictions,
             int numBoxRestrictions,
-            [In] NativeBoxRestriction[] boxRestrictions);
+            [In] NativeBoxRestriction[]? boxRestrictions);
 
         // ---------------------------------------------------------------
         // Result queries

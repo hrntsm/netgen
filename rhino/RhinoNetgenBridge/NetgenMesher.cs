@@ -51,7 +51,7 @@ namespace RhinoNetgenBridge
         // Per-thread storage for the native delegate so that the GC does not
         // collect it while the native call is in progress.
         [ThreadStatic]
-        private static NetgenNative.ProgressCallbackDelegate _nativeProgressDelegate;
+        private static NetgenNative.ProgressCallbackDelegate? _nativeProgressDelegate;
 
         // ---------------------------------------------------------------
         // Lifecycle
@@ -122,16 +122,16 @@ namespace RhinoNetgenBridge
         /// </exception>
         public static TetrahedralMesh GenerateFromBrep(
             Brep brep,
-            MeshingParameters meshingParams = null,
-            Rhino.Geometry.MeshingParameters rhinoMeshParams = null,
-            IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
-            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
-            Action<string, int> onProgress = null)
+            MeshingParameters? meshingParams = null,
+            Rhino.Geometry.MeshingParameters? rhinoMeshParams = null,
+            IReadOnlyList<PointSizeRestriction>? pointRestrictions = null,
+            IReadOnlyList<BoxSizeRestriction>? boxRestrictions = null,
+            Action<string, int>? onProgress = null)
         {
             if (brep == null) throw new ArgumentNullException(nameof(brep));
             EnsureInitialised();
 
-            Mesh surfaceMesh = TessellateBrep(brep, rhinoMeshParams);
+            Mesh? surfaceMesh = TessellateBrep(brep, rhinoMeshParams);
             if (surfaceMesh == null || surfaceMesh.Faces.Count == 0)
                 throw new NetgenMeshingException(NetgenErrorCode.InvalidInput,
                     "Failed to tessellate the Brep into a surface mesh. " +
@@ -182,18 +182,18 @@ namespace RhinoNetgenBridge
         /// </exception>
         public static TetrahedralMesh GenerateFromBreps(
             IReadOnlyList<Brep> breps,
-            MeshingParameters meshingParams = null,
-            Rhino.Geometry.MeshingParameters rhinoMeshParams = null,
-            IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
-            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
-            Action<string, int> onProgress = null)
+            MeshingParameters? meshingParams = null,
+            Rhino.Geometry.MeshingParameters? rhinoMeshParams = null,
+            IReadOnlyList<PointSizeRestriction>? pointRestrictions = null,
+            IReadOnlyList<BoxSizeRestriction>? boxRestrictions = null,
+            Action<string, int>? onProgress = null)
         {
             if (breps == null || breps.Count == 0)
                 throw new ArgumentException("At least one Brep is required.", nameof(breps));
             EnsureInitialised();
 
             var combined = new Mesh();
-            var mp = rhinoMeshParams ?? Rhino.Geometry.MeshingParameters.Smooth;
+            var mp = rhinoMeshParams ?? Rhino.Geometry.MeshingParameters.QualityRenderMesh;
 
             for (int b = 0; b < breps.Count; ++b)
             {
@@ -254,15 +254,15 @@ namespace RhinoNetgenBridge
         /// </exception>
         public static TetrahedralMesh GenerateFromMesh(
             Mesh surfaceMesh,
-            MeshingParameters meshingParams = null,
-            IReadOnlyList<PointSizeRestriction> pointRestrictions = null,
-            IReadOnlyList<BoxSizeRestriction>   boxRestrictions   = null,
-            Action<string, int> onProgress = null)
+            MeshingParameters? meshingParams = null,
+            IReadOnlyList<PointSizeRestriction>? pointRestrictions = null,
+            IReadOnlyList<BoxSizeRestriction>? boxRestrictions = null,
+            Action<string, int>? onProgress = null)
         {
             if (surfaceMesh == null) throw new ArgumentNullException(nameof(surfaceMesh));
             EnsureInitialised();
 
-            meshingParams ??= MeshingParameters.Medium();
+            var effectiveMeshingParams = meshingParams ?? MeshingParameters.Medium();
 
             // ------------------------------------------------------------------
             // 1. Triangulate all faces (quads → 2 tris) and weld vertices
@@ -300,22 +300,22 @@ namespace RhinoNetgenBridge
             // ------------------------------------------------------------------
             var nmp = new NetgenNative.NativeMeshingParams
             {
-                MaxH               = meshingParams.MaxElementSize,
-                MinH               = meshingParams.MinElementSize,
-                Fineness           = meshingParams.Fineness,
-                Grading            = meshingParams.Grading,
-                ElementsPerEdge    = meshingParams.ElementsPerEdge,
-                ElementsPerCurve   = meshingParams.ElementsPerCurve,
-                CloseEdgeFact      = meshingParams.CloseEdgeFactor,
-                MinEdgeLen         = meshingParams.MinEdgeLength,
-                CloseEdgeEnable    = meshingParams.CloseEdgeRefinement    ? 1 : 0,
-                MinEdgeLenEnable   = meshingParams.EnforceMinEdgeLength   ? 1 : 0,
-                OptSteps2D         = meshingParams.OptimizationSteps2D,
-                OptSteps3D         = meshingParams.OptimizationSteps3D,
-                OptSurfMeshEnable  = meshingParams.EnableSurfaceOptimization ? 1 : 0,
-                OptVolMeshEnable   = meshingParams.EnableVolumeOptimization  ? 1 : 0,
-                SecondOrder        = meshingParams.SecondOrder ? 1 : 0,
-                UniformRefSteps    = meshingParams.UniformRefinementSteps,
+                MaxH               = effectiveMeshingParams.MaxElementSize,
+                MinH               = effectiveMeshingParams.MinElementSize,
+                Fineness           = effectiveMeshingParams.Fineness,
+                Grading            = effectiveMeshingParams.Grading,
+                ElementsPerEdge    = effectiveMeshingParams.ElementsPerEdge,
+                ElementsPerCurve   = effectiveMeshingParams.ElementsPerCurve,
+                CloseEdgeFact      = effectiveMeshingParams.CloseEdgeFactor,
+                MinEdgeLen         = effectiveMeshingParams.MinEdgeLength,
+                CloseEdgeEnable    = effectiveMeshingParams.CloseEdgeRefinement ? 1 : 0,
+                MinEdgeLenEnable   = effectiveMeshingParams.EnforceMinEdgeLength ? 1 : 0,
+                OptSteps2D         = effectiveMeshingParams.OptimizationSteps2D,
+                OptSteps3D         = effectiveMeshingParams.OptimizationSteps3D,
+                OptSurfMeshEnable  = effectiveMeshingParams.EnableSurfaceOptimization ? 1 : 0,
+                OptVolMeshEnable   = effectiveMeshingParams.EnableVolumeOptimization ? 1 : 0,
+                SecondOrder        = effectiveMeshingParams.SecondOrder ? 1 : 0,
+                UniformRefSteps    = effectiveMeshingParams.UniformRefinementSteps,
             };
 
             // ------------------------------------------------------------------
@@ -387,11 +387,11 @@ namespace RhinoNetgenBridge
                 var result = new TetrahedralMesh(outVertices, outTets, outNPE);
 
                 // Post-generation Laplacian smoothing (TET4 only)
-                if (meshingParams.LaplacianSmoothingIterations > 0
+                if (effectiveMeshingParams.LaplacianSmoothingIterations > 0
                     && result.NodesPerElement == 4)
                     result = result.CreateSmoothed(
-                        meshingParams.LaplacianSmoothingIterations,
-                        meshingParams.LaplacianSmoothingFactor);
+                        effectiveMeshingParams.LaplacianSmoothingIterations,
+                        effectiveMeshingParams.LaplacianSmoothingFactor);
 
                 return result;
             }
@@ -412,11 +412,11 @@ namespace RhinoNetgenBridge
                     $"Call {nameof(NetgenMesher)}.{nameof(Initialize)}() before meshing.");
         }
 
-        private static Mesh TessellateBrep(
+        private static Mesh? TessellateBrep(
             Brep brep,
-            Rhino.Geometry.MeshingParameters rhinoMeshParams)
+            Rhino.Geometry.MeshingParameters? rhinoMeshParams)
         {
-            var mp = rhinoMeshParams ?? Rhino.Geometry.MeshingParameters.Smooth;
+            var mp = rhinoMeshParams ?? Rhino.Geometry.MeshingParameters.QualityRenderMesh;
             Mesh[] faceMeshes = Mesh.CreateFromBrep(brep, mp);
             if (faceMeshes == null || faceMeshes.Length == 0)
                 return null;
@@ -432,8 +432,8 @@ namespace RhinoNetgenBridge
             return combined;
         }
 
-        private static NetgenNative.NativePointRestriction[] BuildPointArray(
-            IReadOnlyList<PointSizeRestriction> list)
+        private static NetgenNative.NativePointRestriction[]? BuildPointArray(
+            IReadOnlyList<PointSizeRestriction>? list)
         {
             if (list == null || list.Count == 0) return null;
             var arr = new NetgenNative.NativePointRestriction[list.Count];
@@ -448,8 +448,8 @@ namespace RhinoNetgenBridge
             return arr;
         }
 
-        private static NetgenNative.NativeBoxRestriction[] BuildBoxArray(
-            IReadOnlyList<BoxSizeRestriction> list)
+        private static NetgenNative.NativeBoxRestriction[]? BuildBoxArray(
+            IReadOnlyList<BoxSizeRestriction>? list)
         {
             if (list == null || list.Count == 0) return null;
             var arr = new NetgenNative.NativeBoxRestriction[list.Count];
