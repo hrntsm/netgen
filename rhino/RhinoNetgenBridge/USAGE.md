@@ -510,6 +510,31 @@ int[] allNodes = tet.GetTetrahedronAllNodes(0);
 var (a, b, c, d) = tet.GetTetrahedron(0);
 ```
 
+### 要素の節点並び順
+
+`TetrahedralMesh.Tetrahedra` および `GetTetrahedronAllNodes()` で取得できる節点配列は、各要素について次の順で格納されています。
+
+- TET4: `[n0, n1, n2, n3]`
+- TET10: `[n0, n1, n2, n3, n4, n5, n6, n7, n8, n9]`
+
+TET10 の各節点の意味は次の通りです。
+
+| 節点 | 意味 |
+|---|---|
+| `n0` | コーナー節点 0 |
+| `n1` | コーナー節点 1 |
+| `n2` | コーナー節点 2 |
+| `n3` | コーナー節点 3 |
+| `n4` | 辺 `(n0, n1)` の中点節点 |
+| `n5` | 辺 `(n0, n2)` の中点節点 |
+| `n6` | 辺 `(n0, n3)` の中点節点 |
+| `n7` | 辺 `(n1, n2)` の中点節点 |
+| `n8` | 辺 `(n1, n3)` の中点節点 |
+| `n9` | 辺 `(n2, n3)` の中点節点 |
+
+内部データは **0-based** インデックスです。
+`MeshExporter` で Abaqus / Gmsh / NASTRAN に書き出すときは、各フォーマットに合わせて **1-based** に変換されますが、節点の並び順自体は変わりません。
+
 #### TET4 と TET10 の比較
 
 | 項目 | TET4（デフォルト） | TET10（SecondOrder） |
@@ -745,6 +770,29 @@ MeshExporter.WriteVtk    (tet, "model.vtu");
 MeshExporter.WriteGmsh   (tet, "model.msh");
 MeshExporter.WriteNastran(tet, "model.bdf");
 ```
+
+### 出力ファイル中の要素節点順
+
+各エクスポートメソッドは、要素内の節点順を `TetrahedralMesh` が保持している順序のまま出力します。
+
+- TET4: `n0, n1, n2, n3`
+- TET10: `n0, n1, n2, n3, n4, n5, n6, n7, n8, n9`
+
+TET10 の中点節点は次の辺に対応します。
+
+- `n4`: 辺 `(n0, n1)`
+- `n5`: 辺 `(n0, n2)`
+- `n6`: 辺 `(n0, n3)`
+- `n7`: 辺 `(n1, n2)`
+- `n8`: 辺 `(n1, n3)`
+- `n9`: 辺 `(n2, n3)`
+
+番号の基準はフォーマットごとに異なります。
+
+- Abaqus / Gmsh / NASTRAN: 節点番号は 1-based
+- VTK: 節点番号は 0-based
+
+そのため、出力ファイルを確認するときは「番号の開始値」はフォーマット依存ですが、「要素内の節点の並び順」は共通です。
 
 ### Abaqus .inp
 
