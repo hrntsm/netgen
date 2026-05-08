@@ -41,9 +41,9 @@ namespace RhinoNetgenBridge
 
         internal TetrahedralMesh(double[] vertices, int[] tetrahedra, int nodesPerElement = 4)
         {
-            Vertices         = vertices   ?? throw new ArgumentNullException(nameof(vertices));
-            Tetrahedra       = tetrahedra ?? throw new ArgumentNullException(nameof(tetrahedra));
-            NodesPerElement  = (nodesPerElement == 4 || nodesPerElement == 10)
+            Vertices = vertices ?? throw new ArgumentNullException(nameof(vertices));
+            Tetrahedra = tetrahedra ?? throw new ArgumentNullException(nameof(tetrahedra));
+            NodesPerElement = (nodesPerElement == 4 || nodesPerElement == 10)
                 ? nodesPerElement
                 : throw new ArgumentOutOfRangeException(nameof(nodesPerElement),
                     "nodesPerElement must be 4 (TET4) or 10 (TET10).");
@@ -158,7 +158,7 @@ namespace RhinoNetgenBridge
 
             if (n == 0)
                 return new MeshQualityStatistics(
-                    0,0,0,0, -1,-1, 0,0,0, 0,0,0, 0,0);
+                    0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0);
 
             double minEta = double.MaxValue, maxEta = double.MinValue, sumEta = 0;
             double minDih = double.MaxValue, maxDih = double.MinValue, sumMinDih = 0;
@@ -170,7 +170,7 @@ namespace RhinoNetgenBridge
                 var q = perElementQualities[i];
 
                 if (q.MeanRatio < minEta) { minEta = q.MeanRatio; worstIdx = i; }
-                if (q.MeanRatio > maxEta) { maxEta = q.MeanRatio; bestIdx  = i; }
+                if (q.MeanRatio > maxEta) { maxEta = q.MeanRatio; bestIdx = i; }
                 sumEta += q.MeanRatio;
 
                 if (q.MinDihedralAngleDegrees < minDih) minDih = q.MinDihedralAngleDegrees;
@@ -247,7 +247,7 @@ namespace RhinoNetgenBridge
                 throw new InvalidOperationException(
                     "Laplacian smoothing is only supported for TET4 (linear) elements. " +
                     "Second-order (TET10) meshes cannot be smoothed with this method.");
-            if (iterations < 0)  throw new ArgumentOutOfRangeException(nameof(iterations));
+            if (iterations < 0) throw new ArgumentOutOfRangeException(nameof(iterations));
             if (factor <= 0 || factor > 1.0)
                 throw new ArgumentOutOfRangeException(nameof(factor),
                     "factor must be in the range (0, 1].");
@@ -322,7 +322,7 @@ namespace RhinoNetgenBridge
             // ------------------------------------------------------------------
             // 3. Iterative Laplacian relaxation
             // ------------------------------------------------------------------
-            double[] cur  = (double[])Vertices.Clone();
+            double[] cur = (double[])Vertices.Clone();
             double[] next = new double[cur.Length];
 
             for (int iter = 0; iter < iterations; ++iter)
@@ -350,14 +350,14 @@ namespace RhinoNetgenBridge
                     cz *= invN;
 
                     // Move v towards centroid by factor λ
-                    next[v * 3]     = cur[v * 3]     + factor * (cx - cur[v * 3]);
+                    next[v * 3] = cur[v * 3] + factor * (cx - cur[v * 3]);
                     next[v * 3 + 1] = cur[v * 3 + 1] + factor * (cy - cur[v * 3 + 1]);
                     next[v * 3 + 2] = cur[v * 3 + 2] + factor * (cz - cur[v * 3 + 2]);
                 }
 
                 // Swap buffers
                 var tmp = cur;
-                cur  = next;
+                cur = next;
                 next = tmp;
             }
 

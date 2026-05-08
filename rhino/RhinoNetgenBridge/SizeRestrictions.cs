@@ -40,7 +40,7 @@ namespace RhinoNetgenBridge
             if (maxElementSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(maxElementSize),
                     "MaxElementSize must be positive.");
-            Point          = point;
+            Point = point;
             MaxElementSize = maxElementSize;
         }
 
@@ -88,7 +88,7 @@ namespace RhinoNetgenBridge
             if (maxElementSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(maxElementSize),
                     "MaxElementSize must be positive.");
-            Box            = box;
+            Box = box;
             MaxElementSize = maxElementSize;
         }
 

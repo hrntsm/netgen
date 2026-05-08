@@ -222,7 +222,7 @@ namespace RhinoNetgenBridge
         public static MeshingParameters Coarse() => new MeshingParameters
         {
             Fineness = 0.2,
-            Grading  = 0.3,
+            Grading = 0.3,
         };
 
         /// <summary>Medium preset – balanced quality and speed (fineness = 0.5).</summary>
@@ -232,14 +232,14 @@ namespace RhinoNetgenBridge
         public static MeshingParameters Fine() => new MeshingParameters
         {
             Fineness = 0.8,
-            Grading  = 0.3,
+            Grading = 0.3,
         };
 
         /// <summary>Very-fine preset – maximum quality (fineness = 1.0).</summary>
         public static MeshingParameters VeryFine() => new MeshingParameters
         {
             Fineness = 1.0,
-            Grading  = 0.1,
+            Grading = 0.1,
         };
     }
 }
