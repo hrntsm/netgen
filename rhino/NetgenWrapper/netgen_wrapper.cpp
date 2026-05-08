@@ -57,6 +57,30 @@ static void computeNormal(const double* p1, const double* p2, const double* p3,
     nv[2] = ax * by - ay * bx;
 }
 
+/// Map fineness [0..1] to elementsperedge / elementspercurve using the same
+/// lookup tables as netgen's Tcl setgranularity (fineness 1..5 → index 0..4).
+/// The caller's explicit elementsperedge / elementspercurve values are ignored
+/// when fineness is not at its default (0.5), so that the single knob works.
+static void applyFineness(double fineness,
+                          double& elementsperedge,
+                          double& elementspercurve)
+{
+    // Tcl lookup tables for granularity levels 1–5 (index 0–4)
+    static const double kEpe[5] = { 0.3, 0.5, 1.0, 2.0, 3.0 }; // segmentsperedge
+    static const double kEpc[5] = { 1.0, 1.5, 2.0, 3.0, 5.0 }; // curvaturesafety
+
+    double t = fineness * 4.0; // map [0,1] → [0,4]
+    if (t < 0.0) t = 0.0;
+    if (t > 4.0) t = 4.0;
+
+    int lo = static_cast<int>(t);
+    if (lo >= 4) lo = 3;
+    double f = t - lo;
+
+    elementsperedge  = kEpe[lo] + f * (kEpe[lo + 1] - kEpe[lo]);
+    elementspercurve = kEpc[lo] + f * (kEpc[lo + 1] - kEpc[lo]);
+}
+
 /// Transfer fields from NGW_MeshingParams into an Ng_Meshing_Parameters.
 static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst)
 {
@@ -64,8 +88,15 @@ static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst
     dst.minh               = src->minh;
     dst.fineness           = src->fineness;
     dst.grading            = src->grading;
-    dst.elementsperedge    = src->elementsperedge;
-    dst.elementspercurve   = src->elementspercurve;
+
+    // fineness is a dead field in nglib's Transfer_Parameters() – it is never
+    // forwarded to the internal mparam.  Convert it here to elementsperedge /
+    // elementspercurve using the same mapping as netgen's Tcl setgranularity.
+    double epe = src->elementsperedge;
+    double epc = src->elementspercurve;
+    applyFineness(src->fineness, epe, epc);
+    dst.elementsperedge    = epe;
+    dst.elementspercurve   = epc;
     dst.closeedgeenable    = src->closeedgeenable;
     dst.closeedgefact      = src->closeedgefact;
     dst.minedgelenenable   = src->minedgelenenable;
