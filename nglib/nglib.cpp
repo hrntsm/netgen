@@ -640,7 +640,7 @@ namespace nglib
       me -> SetGlobalH (mparam.maxh);
       me -> SetLocalH (stlgeometry->GetBoundingBox().PMin() - Vec3d(10, 10, 10),
                        stlgeometry->GetBoundingBox().PMax() + Vec3d(10, 10, 10),
-                       0.3);
+                       mparam.grading);
 
       // cout << "meshsize = " << mp->meshsize_filename << endl;
       if (mp->meshsize_filename)
@@ -858,6 +858,11 @@ namespace nglib
       mparam.grading = grading;
       mparam.curvaturesafety = elementspercurve;
       mparam.segmentsperedge = elementsperedge;
+
+      if (closeedgeenable)
+         mparam.closeedgefac = closeedgefact;
+      else
+         mparam.closeedgefac = nullopt;
 
       mparam.secondorder = second_order;
       mparam.quad = quad_dominated;

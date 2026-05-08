@@ -57,46 +57,17 @@ static void computeNormal(const double* p1, const double* p2, const double* p3,
     nv[2] = ax * by - ay * bx;
 }
 
-/// Map fineness [0..1] to elementsperedge / elementspercurve using the same
-/// lookup tables as netgen's Tcl setgranularity (fineness 1..5 → index 0..4).
-/// The caller's explicit elementsperedge / elementspercurve values are ignored
-/// when fineness is not at its default (0.5), so that the single knob works.
-static void applyFineness(double fineness,
-                          double& elementsperedge,
-                          double& elementspercurve)
-{
-    // Tcl lookup tables for granularity levels 1–5 (index 0–4)
-    static const double kEpe[5] = { 0.3, 0.5, 1.0, 2.0, 3.0 }; // segmentsperedge
-    static const double kEpc[5] = { 1.0, 1.5, 2.0, 3.0, 5.0 }; // curvaturesafety
-
-    double t = fineness * 4.0; // map [0,1] → [0,4]
-    if (t < 0.0) t = 0.0;
-    if (t > 4.0) t = 4.0;
-
-    int lo = static_cast<int>(t);
-    if (lo >= 4) lo = 3;
-    double f = t - lo;
-
-    elementsperedge  = kEpe[lo] + f * (kEpe[lo + 1] - kEpe[lo]);
-    elementspercurve = kEpc[lo] + f * (kEpc[lo + 1] - kEpc[lo]);
-}
-
 /// Transfer fields from NGW_MeshingParams into an Ng_Meshing_Parameters.
+/// NOTE: maxh is set separately in generateMeshImpl after the bounding box
+///       is known, so that fineness can be mapped to an absolute size.
 static void applyParams(const NGW_MeshingParams* src, Ng_Meshing_Parameters& dst)
 {
     dst.maxh               = src->maxh;
     dst.minh               = src->minh;
     dst.fineness           = src->fineness;
     dst.grading            = src->grading;
-
-    // fineness is a dead field in nglib's Transfer_Parameters() – it is never
-    // forwarded to the internal mparam.  Convert it here to elementsperedge /
-    // elementspercurve using the same mapping as netgen's Tcl setgranularity.
-    double epe = src->elementsperedge;
-    double epc = src->elementspercurve;
-    applyFineness(src->fineness, epe, epc);
-    dst.elementsperedge    = epe;
-    dst.elementspercurve   = epc;
+    dst.elementsperedge    = src->elementsperedge;
+    dst.elementspercurve   = src->elementspercurve;
     dst.closeedgeenable    = src->closeedgeenable;
     dst.closeedgefact      = src->closeedgefact;
     dst.minedgelenenable   = src->minedgelenenable;
@@ -183,8 +154,47 @@ static void* generateMeshImpl(
     // ------------------------------------------------------------------
     // 2. Set up meshing parameters
     // ------------------------------------------------------------------
+
+    // For STL-based meshing the primary density control is maxh.
+    // elementsperedge / elementspercurve affect only OCC/CSG geometry, not
+    // STL, and the internal stlparam.resthlinelengthfac (which mirrors the
+    // Tcl fineness knob) is not exposed through the nglib C API.
+    //
+    // Strategy: if the caller left maxh at its sentinel default (≥ 1e5),
+    // derive an effective maxh from the bounding-box diagonal and fineness
+    // so that fineness=0 → coarse and fineness=1 → fine.
+    //
+    // Mapping (log-linear):
+    //   maxh = (bbdiag / 3) * 0.1^fineness
+    //   fineness=0.0 → bbdiag/3   (coarse)
+    //   fineness=0.5 → bbdiag/9.5 (medium)
+    //   fineness=1.0 → bbdiag/30  (fine)
     Ng_Meshing_Parameters ngmp;
     applyParams(mp, ngmp);
+
+    if (mp->maxh >= 1e5)
+    {
+        // Compute bounding-box diagonal from input vertices.
+        double bbmin[3] = { vertices[0], vertices[1], vertices[2] };
+        double bbmax[3] = { vertices[0], vertices[1], vertices[2] };
+        for (int i = 1; i < numVertices; ++i)
+        {
+            for (int j = 0; j < 3; ++j)
+            {
+                if (vertices[i*3+j] < bbmin[j]) bbmin[j] = vertices[i*3+j];
+                if (vertices[i*3+j] > bbmax[j]) bbmax[j] = vertices[i*3+j];
+            }
+        }
+        double dx = bbmax[0]-bbmin[0], dy = bbmax[1]-bbmin[1], dz = bbmax[2]-bbmin[2];
+        double bbdiag = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (bbdiag < 1e-12) bbdiag = 1.0; // guard against degenerate geometry
+
+        double f = mp->fineness;
+        if (f < 0.0) f = 0.0;
+        if (f > 1.0) f = 1.0;
+        double effectiveMaxh = (bbdiag / 3.0) * std::pow(0.1, f);
+        ngmp.maxh = effectiveMaxh;
+    }
 
     // ------------------------------------------------------------------
     // 3. Create mesh and apply optional local size restrictions
@@ -192,10 +202,6 @@ static void* generateMeshImpl(
     Ng_Mesh* mesh = Ng_NewMesh();
     if (!mesh)
         return nullptr;
-
-    // Global size restriction derived from maxh (belt-and-suspenders)
-    if (mp->maxh < 1e5)
-        Ng_RestrictMeshSizeGlobal(mesh, mp->maxh);
 
     // Point-based restrictions
     if (numPointRestrictions > 0 && pointRestrictions != nullptr)
