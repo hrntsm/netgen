@@ -300,22 +300,22 @@ namespace RhinoNetgenBridge
             // ------------------------------------------------------------------
             var nmp = new NetgenNative.NativeMeshingParams
             {
-                MaxH               = effectiveMeshingParams.MaxElementSize,
-                MinH               = effectiveMeshingParams.MinElementSize,
-                Fineness           = effectiveMeshingParams.Fineness,
-                Grading            = effectiveMeshingParams.Grading,
-                ElementsPerEdge    = effectiveMeshingParams.ElementsPerEdge,
-                ElementsPerCurve   = effectiveMeshingParams.ElementsPerCurve,
-                CloseEdgeFact      = effectiveMeshingParams.CloseEdgeFactor,
-                MinEdgeLen         = effectiveMeshingParams.MinEdgeLength,
-                CloseEdgeEnable    = effectiveMeshingParams.CloseEdgeRefinement ? 1 : 0,
-                MinEdgeLenEnable   = effectiveMeshingParams.EnforceMinEdgeLength ? 1 : 0,
-                OptSteps2D         = effectiveMeshingParams.OptimizationSteps2D,
-                OptSteps3D         = effectiveMeshingParams.OptimizationSteps3D,
-                OptSurfMeshEnable  = effectiveMeshingParams.EnableSurfaceOptimization ? 1 : 0,
-                OptVolMeshEnable   = effectiveMeshingParams.EnableVolumeOptimization ? 1 : 0,
-                SecondOrder        = effectiveMeshingParams.SecondOrder ? 1 : 0,
-                UniformRefSteps    = effectiveMeshingParams.UniformRefinementSteps,
+                MaxH = effectiveMeshingParams.MaxElementSize,
+                MinH = effectiveMeshingParams.MinElementSize,
+                Fineness = effectiveMeshingParams.Fineness,
+                Grading = effectiveMeshingParams.Grading,
+                ElementsPerEdge = effectiveMeshingParams.ElementsPerEdge,
+                ElementsPerCurve = effectiveMeshingParams.ElementsPerCurve,
+                CloseEdgeFact = effectiveMeshingParams.CloseEdgeFactor,
+                MinEdgeLen = effectiveMeshingParams.MinEdgeLength,
+                CloseEdgeEnable = effectiveMeshingParams.CloseEdgeRefinement ? 1 : 0,
+                MinEdgeLenEnable = effectiveMeshingParams.EnforceMinEdgeLength ? 1 : 0,
+                OptSteps2D = effectiveMeshingParams.OptimizationSteps2D,
+                OptSteps3D = effectiveMeshingParams.OptimizationSteps3D,
+                OptSurfMeshEnable = effectiveMeshingParams.EnableSurfaceOptimization ? 1 : 0,
+                OptVolMeshEnable = effectiveMeshingParams.EnableVolumeOptimization ? 1 : 0,
+                SecondOrder = effectiveMeshingParams.SecondOrder ? 1 : 0,
+                UniformRefSteps = effectiveMeshingParams.UniformRefinementSteps,
             };
 
             // ------------------------------------------------------------------
@@ -330,10 +330,10 @@ namespace RhinoNetgenBridge
             // ------------------------------------------------------------------
             // 5. Build restriction arrays (null when empty)
             // ------------------------------------------------------------------
-            var ptArr  = BuildPointArray(pointRestrictions);
+            var ptArr = BuildPointArray(pointRestrictions);
             var boxArr = BuildBoxArray(boxRestrictions);
 
-            int npt  = ptArr  != null ? ptArr.Length  : 0;
+            int npt = ptArr != null ? ptArr.Length : 0;
             int nbox = boxArr != null ? boxArr.Length : 0;
 
             // ------------------------------------------------------------------
@@ -346,7 +346,7 @@ namespace RhinoNetgenBridge
                     ? NetgenNative.NGW_GenerateTetrahedralMeshEx(
                         nv, vertices, nf, triangles,
                         ref nmp,
-                        npt,  ptArr,
+                        npt, ptArr,
                         nbox, boxArr)
                     : NetgenNative.NGW_GenerateTetrahedralMesh(
                         nv, vertices, nf, triangles,
@@ -370,8 +370,8 @@ namespace RhinoNetgenBridge
 
             try
             {
-                int outNV  = NetgenNative.NGW_GetNumPoints(resultHandle);
-                int outNE  = NetgenNative.NGW_GetNumTets(resultHandle);
+                int outNV = NetgenNative.NGW_GetNumPoints(resultHandle);
+                int outNE = NetgenNative.NGW_GetNumTets(resultHandle);
                 int outNPE = NetgenNative.NGW_GetNodesPerElement(resultHandle);
 
                 if (outNV == 0 || outNE == 0)
@@ -379,7 +379,7 @@ namespace RhinoNetgenBridge
                         "The netgen kernel returned an empty mesh.");
 
                 double[] outVertices = new double[outNV * 3];
-                int[]    outTets     = new int[outNE * outNPE];
+                int[] outTets = new int[outNE * outNPE];
 
                 NetgenNative.NGW_GetPoints(resultHandle, outVertices);
                 NetgenNative.NGW_GetTets(resultHandle, outTets);
@@ -458,9 +458,13 @@ namespace RhinoNetgenBridge
                 var b = list[i].Box;
                 arr[i] = new NetgenNative.NativeBoxRestriction
                 {
-                    XMin = b.Min.X, YMin = b.Min.Y, ZMin = b.Min.Z,
-                    XMax = b.Max.X, YMax = b.Max.Y, ZMax = b.Max.Z,
-                    H    = list[i].MaxElementSize,
+                    XMin = b.Min.X,
+                    YMin = b.Min.Y,
+                    ZMin = b.Min.Z,
+                    XMax = b.Max.X,
+                    YMax = b.Max.Y,
+                    ZMax = b.Max.Z,
+                    H = list[i].MaxElementSize,
                 };
             }
             return arr;

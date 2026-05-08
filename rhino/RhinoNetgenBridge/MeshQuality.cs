@@ -67,11 +67,11 @@ namespace RhinoNetgenBridge
         internal TetQuality(double meanRatio, double minDihedral, double maxDihedral,
                              double volume, double edgeLengthRatio)
         {
-            MeanRatio               = meanRatio;
+            MeanRatio = meanRatio;
             MinDihedralAngleDegrees = minDihedral;
             MaxDihedralAngleDegrees = maxDihedral;
-            Volume                  = volume;
-            EdgeLengthRatio         = edgeLengthRatio;
+            Volume = volume;
+            EdgeLengthRatio = edgeLengthRatio;
         }
 
         /// <summary>
@@ -169,19 +169,19 @@ namespace RhinoNetgenBridge
             double minVol, double maxVol, double totalVol,
             int totalElements, int invertedElements)
         {
-            MinMeanRatio     = minEta;
-            MaxMeanRatio     = maxEta;
+            MinMeanRatio = minEta;
+            MaxMeanRatio = maxEta;
             AverageMeanRatio = avgEta;
-            StdDevMeanRatio  = stdEta;
+            StdDevMeanRatio = stdEta;
             WorstElementIndex = worstIdx;
-            BestElementIndex  = bestIdx;
-            MinDihedralAngleDegrees        = minDih;
-            MaxDihedralAngleDegrees        = maxDih;
+            BestElementIndex = bestIdx;
+            MinDihedralAngleDegrees = minDih;
+            MaxDihedralAngleDegrees = maxDih;
             AverageMinDihedralAngleDegrees = avgMinDih;
-            MinVolume       = minVol;
-            MaxVolume       = maxVol;
-            TotalVolume     = totalVol;
-            TotalElements   = totalElements;
+            MinVolume = minVol;
+            MaxVolume = maxVol;
+            TotalVolume = totalVol;
+            TotalElements = totalElements;
             InvertedElements = invertedElements;
         }
 
@@ -229,40 +229,40 @@ namespace RhinoNetgenBridge
             double[] verts, int i0, int i1, int i2, int i3)
         {
             // Vertex positions
-            double ax = verts[i0*3], ay = verts[i0*3+1], az = verts[i0*3+2];
-            double bx = verts[i1*3], by = verts[i1*3+1], bz = verts[i1*3+2];
-            double cx = verts[i2*3], cy = verts[i2*3+1], cz = verts[i2*3+2];
-            double dx = verts[i3*3], dy = verts[i3*3+1], dz = verts[i3*3+2];
+            double ax = verts[i0 * 3], ay = verts[i0 * 3 + 1], az = verts[i0 * 3 + 2];
+            double bx = verts[i1 * 3], by = verts[i1 * 3 + 1], bz = verts[i1 * 3 + 2];
+            double cx = verts[i2 * 3], cy = verts[i2 * 3 + 1], cz = verts[i2 * 3 + 2];
+            double dx = verts[i3 * 3], dy = verts[i3 * 3 + 1], dz = verts[i3 * 3 + 2];
 
             // Edge vectors from a
-            double e1x = bx-ax, e1y = by-ay, e1z = bz-az;
-            double e2x = cx-ax, e2y = cy-ay, e2z = cz-az;
-            double e3x = dx-ax, e3y = dy-ay, e3z = dz-az;
+            double e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            double e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+            double e3x = dx - ax, e3y = dy - ay, e3z = dz - az;
 
             // Signed volume = det(e1,e2,e3) / 6
-            double vol = (e1x*(e2y*e3z - e2z*e3y)
-                        - e1y*(e2x*e3z - e2z*e3x)
-                        + e1z*(e2x*e3y - e2y*e3x)) / 6.0;
+            double vol = (e1x * (e2y * e3z - e2z * e3y)
+                        - e1y * (e2x * e3z - e2z * e3x)
+                        + e1z * (e2x * e3y - e2y * e3x)) / 6.0;
 
             // All 6 edges
-            double l01 = EdgeLen(ax,ay,az, bx,by,bz);
-            double l02 = EdgeLen(ax,ay,az, cx,cy,cz);
-            double l03 = EdgeLen(ax,ay,az, dx,dy,dz);
-            double l12 = EdgeLen(bx,by,bz, cx,cy,cz);
-            double l13 = EdgeLen(bx,by,bz, dx,dy,dz);
-            double l23 = EdgeLen(cx,cy,cz, dx,dy,dz);
+            double l01 = EdgeLen(ax, ay, az, bx, by, bz);
+            double l02 = EdgeLen(ax, ay, az, cx, cy, cz);
+            double l03 = EdgeLen(ax, ay, az, dx, dy, dz);
+            double l12 = EdgeLen(bx, by, bz, cx, cy, cz);
+            double l13 = EdgeLen(bx, by, bz, dx, dy, dz);
+            double l23 = EdgeLen(cx, cy, cz, dx, dy, dz);
 
-            double minEdge = Min6(l01,l02,l03,l12,l13,l23);
-            double maxEdge = Max6(l01,l02,l03,l12,l13,l23);
+            double minEdge = Min6(l01, l02, l03, l12, l13, l23);
+            double maxEdge = Max6(l01, l02, l03, l12, l13, l23);
             double edgeRatio = maxEdge > 0 ? minEdge / maxEdge : 0;
 
             // Mean ratio η = 12*(3V)^(2/3) / Σl²
-            double sumL2 = l01*l01 + l02*l02 + l03*l03
-                         + l12*l12 + l13*l13 + l23*l23;
+            double sumL2 = l01 * l01 + l02 * l02 + l03 * l03
+                         + l12 * l12 + l13 * l13 + l23 * l23;
             double absVol = Math.Abs(vol);
             double eta = 0;
             if (sumL2 > 0 && absVol > 0)
-                eta = 12.0 * Math.Pow(3.0 * absVol, 2.0/3.0) / sumL2;
+                eta = 12.0 * Math.Pow(3.0 * absVol, 2.0 / 3.0) / sumL2;
 
             // Dihedral angles (one per edge, 6 total)
             double minDih = double.MaxValue, maxDih = double.MinValue;
@@ -276,18 +276,18 @@ namespace RhinoNetgenBridge
                 // Face 1: (p0,p1,q0), outward away from q1
                 // Face 2: (p0,p1,q1), outward away from q0
                 double angle = DihedralAngle(
-                    p0x,p0y,p0z, p1x,p1y,p1z,
-                    q0x,q0y,q0z, q1x,q1y,q1z) * Rad2Deg;
+                    p0x, p0y, p0z, p1x, p1y, p1z,
+                    q0x, q0y, q0z, q1x, q1y, q1z) * Rad2Deg;
                 if (angle < minDih) minDih = angle;
                 if (angle > maxDih) maxDih = angle;
             }
 
-            CheckEdge(ax,ay,az, bx,by,bz, cx,cy,cz, dx,dy,dz); // edge 01
-            CheckEdge(ax,ay,az, cx,cy,cz, bx,by,bz, dx,dy,dz); // edge 02
-            CheckEdge(ax,ay,az, dx,dy,dz, bx,by,bz, cx,cy,cz); // edge 03
-            CheckEdge(bx,by,bz, cx,cy,cz, ax,ay,az, dx,dy,dz); // edge 12
-            CheckEdge(bx,by,bz, dx,dy,dz, ax,ay,az, cx,cy,cz); // edge 13
-            CheckEdge(cx,cy,cz, dx,dy,dz, ax,ay,az, bx,by,bz); // edge 23
+            CheckEdge(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz); // edge 01
+            CheckEdge(ax, ay, az, cx, cy, cz, bx, by, bz, dx, dy, dz); // edge 02
+            CheckEdge(ax, ay, az, dx, dy, dz, bx, by, bz, cx, cy, cz); // edge 03
+            CheckEdge(bx, by, bz, cx, cy, cz, ax, ay, az, dx, dy, dz); // edge 12
+            CheckEdge(bx, by, bz, dx, dy, dz, ax, ay, az, cx, cy, cz); // edge 13
+            CheckEdge(cx, cy, cz, dx, dy, dz, ax, ay, az, bx, by, bz); // edge 23
 
             return new TetQuality(eta, minDih, maxDih, vol, edgeRatio);
         }
@@ -303,26 +303,26 @@ namespace RhinoNetgenBridge
         {
             // Outward face normal of (p0,p1,q0), pointing away from q1
             double n1x, n1y, n1z;
-            Cross(p1x-p0x,p1y-p0y,p1z-p0z,
-                  q0x-p0x,q0y-p0y,q0z-p0z,
+            Cross(p1x - p0x, p1y - p0y, p1z - p0z,
+                  q0x - p0x, q0y - p0y, q0z - p0z,
                   out n1x, out n1y, out n1z);
-            if (Dot(n1x,n1y,n1z, q1x-p0x,q1y-p0y,q1z-p0z) > 0)
-            { n1x=-n1x; n1y=-n1y; n1z=-n1z; }
+            if (Dot(n1x, n1y, n1z, q1x - p0x, q1y - p0y, q1z - p0z) > 0)
+            { n1x = -n1x; n1y = -n1y; n1z = -n1z; }
 
             // Outward face normal of (p0,p1,q1), pointing away from q0
             double n2x, n2y, n2z;
-            Cross(p1x-p0x,p1y-p0y,p1z-p0z,
-                  q1x-p0x,q1y-p0y,q1z-p0z,
+            Cross(p1x - p0x, p1y - p0y, p1z - p0z,
+                  q1x - p0x, q1y - p0y, q1z - p0z,
                   out n2x, out n2y, out n2z);
-            if (Dot(n2x,n2y,n2z, q0x-p0x,q0y-p0y,q0z-p0z) > 0)
-            { n2x=-n2x; n2y=-n2y; n2z=-n2z; }
+            if (Dot(n2x, n2y, n2z, q0x - p0x, q0y - p0y, q0z - p0z) > 0)
+            { n2x = -n2x; n2y = -n2y; n2z = -n2z; }
 
-            double len1 = Math.Sqrt(n1x*n1x + n1y*n1y + n1z*n1z);
-            double len2 = Math.Sqrt(n2x*n2x + n2y*n2y + n2z*n2z);
+            double len1 = Math.Sqrt(n1x * n1x + n1y * n1y + n1z * n1z);
+            double len2 = Math.Sqrt(n2x * n2x + n2y * n2y + n2z * n2z);
 
             if (len1 < 1e-30 || len2 < 1e-30) return 0;
 
-            double cosTheta = Dot(n1x,n1y,n1z, n2x,n2y,n2z) / (len1 * len2);
+            double cosTheta = Dot(n1x, n1y, n1z, n2x, n2y, n2z) / (len1 * len2);
             cosTheta = Math.Max(-1.0, Math.Min(1.0, cosTheta));
 
             // Interior dihedral angle = π - angle_between_outward_normals
@@ -332,41 +332,41 @@ namespace RhinoNetgenBridge
         // ------------------------------------------------------------------
         // Arithmetic helpers (inline, no heap allocation)
         // ------------------------------------------------------------------
-        private static double EdgeLen(double ax,double ay,double az,
-                                       double bx,double by,double bz)
+        private static double EdgeLen(double ax, double ay, double az,
+                                       double bx, double by, double bz)
         {
-            double dx=bx-ax, dy=by-ay, dz=bz-az;
-            return Math.Sqrt(dx*dx+dy*dy+dz*dz);
+            double dx = bx - ax, dy = by - ay, dz = bz - az;
+            return Math.Sqrt(dx * dx + dy * dy + dz * dz);
         }
 
-        private static void Cross(double ax,double ay,double az,
-                                   double bx,double by,double bz,
-                                   out double cx,out double cy,out double cz)
+        private static void Cross(double ax, double ay, double az,
+                                   double bx, double by, double bz,
+                                   out double cx, out double cy, out double cz)
         {
-            cx = ay*bz - az*by;
-            cy = az*bx - ax*bz;
-            cz = ax*by - ay*bx;
+            cx = ay * bz - az * by;
+            cy = az * bx - ax * bz;
+            cz = ax * by - ay * bx;
         }
 
-        private static double Dot(double ax,double ay,double az,
-                                   double bx,double by,double bz)
-            => ax*bx + ay*by + az*bz;
+        private static double Dot(double ax, double ay, double az,
+                                   double bx, double by, double bz)
+            => ax * bx + ay * by + az * bz;
 
-        private static double Min6(double a,double b,double c,
-                                    double d,double e,double f)
+        private static double Min6(double a, double b, double c,
+                                    double d, double e, double f)
         {
             double m = a;
-            if (b<m) m=b; if (c<m) m=c; if (d<m) m=d;
-            if (e<m) m=e; if (f<m) m=f;
+            if (b < m) m = b; if (c < m) m = c; if (d < m) m = d;
+            if (e < m) m = e; if (f < m) m = f;
             return m;
         }
 
-        private static double Max6(double a,double b,double c,
-                                    double d,double e,double f)
+        private static double Max6(double a, double b, double c,
+                                    double d, double e, double f)
         {
             double m = a;
-            if (b>m) m=b; if (c>m) m=c; if (d>m) m=d;
-            if (e>m) m=e; if (f>m) m=f;
+            if (b > m) m = b; if (c > m) m = c; if (d > m) m = d;
+            if (e > m) m = e; if (f > m) m = f;
             return m;
         }
     }

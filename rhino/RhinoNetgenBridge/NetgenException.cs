@@ -101,13 +101,13 @@ namespace RhinoNetgenBridge
         private static string GetDefaultMessage(NetgenErrorCode code) =>
             code switch
             {
-                NetgenErrorCode.Ok                  => "Meshing succeeded.",
-                NetgenErrorCode.InvalidInput        => "Invalid input: null pointer, empty mesh, or bad arguments.",
-                NetgenErrorCode.StlInitFailed       => "STL geometry initialisation failed. The surface mesh may be degenerate or non-manifold.",
-                NetgenErrorCode.EdgeGenerationFailed=> "Edge generation failed. Check that the surface mesh is valid and closed.",
-                NetgenErrorCode.SurfaceMeshFailed   => "Surface mesh generation failed. Adjust meshing parameters or simplify the geometry.",
-                NetgenErrorCode.VolumeMeshFailed    => "Volume mesh generation failed. Ensure the surface mesh is closed and try different parameters.",
-                _                                   => $"Netgen meshing error (code {(int)code}).",
+                NetgenErrorCode.Ok => "Meshing succeeded.",
+                NetgenErrorCode.InvalidInput => "Invalid input: null pointer, empty mesh, or bad arguments.",
+                NetgenErrorCode.StlInitFailed => "STL geometry initialisation failed. The surface mesh may be degenerate or non-manifold.",
+                NetgenErrorCode.EdgeGenerationFailed => "Edge generation failed. Check that the surface mesh is valid and closed.",
+                NetgenErrorCode.SurfaceMeshFailed => "Surface mesh generation failed. Adjust meshing parameters or simplify the geometry.",
+                NetgenErrorCode.VolumeMeshFailed => "Volume mesh generation failed. Ensure the surface mesh is closed and try different parameters.",
+                _ => $"Netgen meshing error (code {(int)code}).",
             };
     }
 }

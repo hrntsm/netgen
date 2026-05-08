@@ -85,9 +85,9 @@ namespace RhinoNetgenBridge
 
             // Elements (1-based, 1-based node references)
             sw.WriteLine($"*Element, type={elementType}");
-            int ne  = mesh.TetCount;
+            int ne = mesh.TetCount;
             int npe = mesh.NodesPerElement;
-            var sb  = new StringBuilder();
+            var sb = new StringBuilder();
             for (int i = 0; i < ne; ++i)
             {
                 sb.Clear();
@@ -132,9 +132,9 @@ namespace RhinoNetgenBridge
         {
             ValidateArgs(mesh, path);
 
-            int nv     = mesh.VertexCount;
-            int ne     = mesh.TetCount;
-            int npe    = mesh.NodesPerElement;
+            int nv = mesh.VertexCount;
+            int ne = mesh.TetCount;
+            int npe = mesh.NodesPerElement;
             int vtkType = npe == 10 ? 24 : 10;
 
             using var sw = new StreamWriter(path, append: false, Encoding.ASCII);
@@ -223,9 +223,9 @@ namespace RhinoNetgenBridge
         {
             ValidateArgs(mesh, path);
 
-            int nv    = mesh.VertexCount;
-            int ne    = mesh.TetCount;
-            int npe   = mesh.NodesPerElement;
+            int nv = mesh.VertexCount;
+            int ne = mesh.TetCount;
+            int npe = mesh.NodesPerElement;
             int gmshType = npe == 10 ? 11 : 4;
 
             using var sw = new StreamWriter(path, append: false, Encoding.ASCII);
@@ -299,8 +299,8 @@ namespace RhinoNetgenBridge
         {
             ValidateArgs(mesh, path);
 
-            int nv  = mesh.VertexCount;
-            int ne  = mesh.TetCount;
+            int nv = mesh.VertexCount;
+            int ne = mesh.TetCount;
             int npe = mesh.NodesPerElement;
 
             using var sw = new StreamWriter(path, append: false, Encoding.ASCII);
@@ -338,7 +338,7 @@ namespace RhinoNetgenBridge
                     // CTETRA,EID,PID,G1,G2,G3,G4
                     sw.WriteLine(
                         $"CTETRA,{i + 1},1," +
-                        $"{tets[b]+1},{tets[b+1]+1},{tets[b+2]+1},{tets[b+3]+1}");
+                        $"{tets[b] + 1},{tets[b + 1] + 1},{tets[b + 2] + 1},{tets[b + 3] + 1}");
                 }
                 else // TET10
                 {
@@ -346,10 +346,10 @@ namespace RhinoNetgenBridge
                     //        +,G7,G8,G9,G10
                     sw.WriteLine(
                         $"CTETRA,{i + 1},1," +
-                        $"{tets[b]+1},{tets[b+1]+1},{tets[b+2]+1},{tets[b+3]+1}," +
-                        $"{tets[b+4]+1},{tets[b+5]+1},+");
+                        $"{tets[b] + 1},{tets[b + 1] + 1},{tets[b + 2] + 1},{tets[b + 3] + 1}," +
+                        $"{tets[b + 4] + 1},{tets[b + 5] + 1},+");
                     sw.WriteLine(
-                        $"+,{tets[b+6]+1},{tets[b+7]+1},{tets[b+8]+1},{tets[b+9]+1}");
+                        $"+,{tets[b + 6] + 1},{tets[b + 7] + 1},{tets[b + 8] + 1},{tets[b + 9] + 1}");
                 }
             }
 

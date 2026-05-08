@@ -54,9 +54,9 @@ namespace RhinoNetgenBridge
 
         internal MeshIssue(MeshIssueType type, string description, int index = -1)
         {
-            Type        = type;
+            Type = type;
             Description = description;
-            Index       = index;
+            Index = index;
         }
 
         public override string ToString() =>
@@ -116,11 +116,11 @@ namespace RhinoNetgenBridge
             int degenerateFaces, int unusedVertices,
             List<MeshIssue> issues)
         {
-            NakedEdgeCount       = nakedEdges;
+            NakedEdgeCount = nakedEdges;
             NonManifoldEdgeCount = nonManifoldEdges;
-            DegenerateFaceCount  = degenerateFaces;
-            UnusedVertexCount    = unusedVertices;
-            Issues               = issues.AsReadOnly();
+            DegenerateFaceCount = degenerateFaces;
+            UnusedVertexCount = unusedVertices;
+            Issues = issues.AsReadOnly();
         }
 
         public override string ToString()
@@ -154,7 +154,7 @@ namespace RhinoNetgenBridge
     public static class MeshValidator
     {
         private const double DegenerateAreaThreshold = 1e-20;
-        private const int    MaxIssueListSize         = 200;
+        private const int MaxIssueListSize = 200;
 
         /// <summary>
         /// Validate a surface mesh for suitability as tetrahedral mesh input.
@@ -194,18 +194,18 @@ namespace RhinoNetgenBridge
             int nv = tri.Vertices.Count;
             int nf = tri.Faces.Count;
 
-            var issues           = new List<MeshIssue>();
-            int nakedEdges       = 0;
+            var issues = new List<MeshIssue>();
+            int nakedEdges = 0;
             int nonManifoldEdges = 0;
-            int degenerateFaces  = 0;
-            int unusedVertices   = 0;
+            int degenerateFaces = 0;
+            int unusedVertices = 0;
 
             // ---------------------------------------------------------------
             // 1. Degenerate faces
             // ---------------------------------------------------------------
             for (int i = 0; i < nf; ++i)
             {
-                var f  = tri.Faces[i];
+                var f = tri.Faces[i];
                 var v0 = tri.Vertices[f.A];
                 var v1 = tri.Vertices[f.B];
                 var v2 = tri.Vertices[f.C];
